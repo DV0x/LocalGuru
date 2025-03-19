@@ -1,0 +1,9 @@
+---
+description: Guidelines for connecting to supabase CLI and database
+globs: 
+alwaysApply: false
+---
+
+-- when connecting to supabase CLI for this project use the following flags
+- for connecting and deploying edge functions --use-docker==false
+- Always use supabase CLI for database operations which is already installed for this project

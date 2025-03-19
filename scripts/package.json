@@ -1,0 +1,26 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "main": "run-reddit-analysis.js",
+  "scripts": {
+    "import-reddit": "ts-node import-reddit-data.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "queue-embeddings": "ts-node queue-reddit-embeddings.ts",
+    "check-embedding-status": "ts-node queue-reddit-embeddings.ts --status"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.x.x",
+    "@types/node": "^x.x.x",
+    "@types/uuid": "^10.0.0",
+    "axios": "^x.x.x",
+    "dotenv": "^16.4.7",
+    "node-fetch": "^2.7.0",
+    "ts-node": "^x.x.x",
+    "typescript": "^x.x.x",
+    "uuid": "^x.x.x"
+  }
+}

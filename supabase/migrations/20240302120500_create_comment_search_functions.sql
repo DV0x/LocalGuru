@@ -6,7 +6,7 @@ create or replace function public.search_comments_by_embedding(
   query_embedding vector(1536),
   similarity_threshold float default 0.7,
   max_results integer default 10,
-  filter_post_id text default null,
+  post_id text default null,
   min_score integer default null
 )
 returns table (
@@ -31,7 +31,7 @@ begin
     1 - (c.embedding <=> query_embedding) as similarity
   from public.reddit_comments c
   where 1 - (c.embedding <=> query_embedding) > similarity_threshold
-    and (filter_post_id is null or c.post_id = filter_post_id)
+    and (post_id is null or c.post_id = post_id)
     and (min_score is null or c.score >= min_score)
   order by similarity desc
   limit max_results;

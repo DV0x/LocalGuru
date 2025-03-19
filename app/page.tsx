@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { SearchBar } from "@/components/search-bar";
 import { ResultsContainer } from "@/components/results-container";
 import { TravelRecommendation } from "@/components/result-card";
-import { Compass } from "lucide-react";
+import { Compass, RefreshCw } from "lucide-react";
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -12,58 +12,50 @@ export default function Home() {
   const [error, setError] = useState<string | undefined>();
   const [results, setResults] = useState<TravelRecommendation[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [isCached, setIsCached] = useState(false);
+  const [processingTime, setProcessingTime] = useState<number | undefined>();
 
   // Handle hydration
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleSearch = async (searchQuery: string) => {
+  const handleSearch = async (searchQuery: string, skipCache = false) => {
     setQuery(searchQuery);
     setIsLoading(true);
     setError(undefined);
 
     try {
-      // In a real implementation, this would call the backend API
-      // For now, we'll simulate a delay and return mock data
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock data for demonstration
-      if (searchQuery.toLowerCase().includes("error")) {
-        throw new Error("Failed to fetch recommendations. Please try again.");
+      // Use our new API route instead of calling Supabase Edge Function directly
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: searchQuery,
+          maxResults: 10,
+          includeAnalysis: true,
+          skipCache
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `Error: ${response.status}`);
       }
+
+      const data = await response.json();
       
-      const mockResults: TravelRecommendation[] = [
-        {
-          id: "1",
-          title: "Hidden Beach in Tulum",
-          location: "Tulum, Mexico",
-          description: "A secluded beach accessible only through a small cave. Perfect for avoiding crowds and enjoying pristine waters.",
-          tags: ["beach", "secluded", "swimming"],
-          source: "r/TravelHacks",
-          sourceUrl: "https://reddit.com/r/TravelHacks"
-        },
-        {
-          id: "2",
-          title: "Local Food Market in Bangkok",
-          location: "Bangkok, Thailand",
-          description: "An authentic food market where locals shop. Try the mango sticky rice from the vendor in the northeast corner.",
-          tags: ["food", "local", "market"],
-          source: "r/Travel",
-          sourceUrl: "https://reddit.com/r/Travel"
-        },
-        {
-          id: "3",
-          title: "Secret Viewpoint in Kyoto",
-          location: "Kyoto, Japan",
-          description: "A lesser-known temple with an amazing view of the city. Go at sunset for the best experience.",
-          tags: ["viewpoint", "temple", "sunset"],
-          source: "r/JapanTravel",
-          sourceUrl: "https://reddit.com/r/JapanTravel"
-        }
-      ];
+      // The results are already formatted by our backend API
+      setResults(data.results);
       
-      setResults(mockResults);
+      // Store cache status and processing time
+      setIsCached(data.cached || false);
+      setProcessingTime(data.processingTime);
+      
+      // You could also store and use the analysis data if needed
+      // console.log('Query analysis:', data.analysis);
     } catch (err) {
       console.error("Search error:", err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
@@ -73,9 +65,36 @@ export default function Home() {
     }
   };
 
-  const handleFeedback = (id: string, isPositive: boolean) => {
-    // In a real implementation, this would send feedback to the backend
-    console.log(`Feedback for recommendation ${id}: ${isPositive ? 'positive' : 'negative'}`);
+  const handleRefresh = () => {
+    if (query) {
+      handleSearch(query, true); // Skip cache to get fresh results
+    }
+  };
+
+  const handleFeedback = async (id: string, isPositive: boolean) => {
+    try {
+      // Use our new API route instead of calling Supabase Edge Function directly
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contentId: id,
+          query: query,
+          isHelpful: isPositive,
+          feedbackSource: 'search_results'
+        })
+      });
+      
+      console.log(`Feedback for recommendation ${id}: ${isPositive ? 'positive' : 'negative'}`);
+      
+      // Optional: You could update the UI to show that feedback was received
+      // For example, disable the feedback buttons for this result or show a thank you message
+    } catch (error) {
+      console.error("Error sending feedback:", error);
+      // Optionally show a toast notification for the error
+    }
   };
 
   const hasResults = isLoading || error || results.length > 0;
@@ -124,6 +143,24 @@ export default function Home() {
 
       {hasResults && (
         <div className="w-full mt-8 max-w-3xl mx-auto">
+          {results.length > 0 && (
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-sm text-gray-400">
+                {results.length} results {processingTime !== undefined && `(${processingTime}ms)`}
+                {isCached && <span className="ml-2 text-amber-400">(Cached)</span>}
+              </div>
+              {isCached && (
+                <button 
+                  onClick={handleRefresh}
+                  className="flex items-center text-sm text-primary hover:text-primary/80 transition-colors"
+                  disabled={isLoading}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Refresh
+                </button>
+              )}
+            </div>
+          )}
           <ResultsContainer
             results={results}
             isLoading={isLoading}

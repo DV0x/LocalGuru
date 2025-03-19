@@ -1,0 +1,36 @@
+{
+  "posts": {
+    "id": "text PRIMARY KEY",
+    "subreddit": "text NOT NULL",
+    "title": "text NOT NULL",
+    "selftext": "text",
+    "author": "text",
+    "created_utc": "bigint NOT NULL",
+    "score": "integer",
+    "upvote_ratio": "float",
+    "num_comments": "integer",
+    "url": "text",
+    "permalink": "text",
+    "is_self": "boolean",
+    "stickied": "boolean",
+    "link_flair_text": "text",
+    "over_18": "boolean",
+    "spoiler": "boolean",
+    "fetched_at": "timestamp with time zone DEFAULT now()",
+    "embedding": "vector(1536)"
+  },
+  "comments": {
+    "id": "text PRIMARY KEY",
+    "post_id": "text REFERENCES posts(id)",
+    "parent_id": "text",
+    "body": "text",
+    "author": "text",
+    "created_utc": "bigint NOT NULL",
+    "score": "integer",
+    "permalink": "text",
+    "stickied": "boolean",
+    "depth": "integer",
+    "fetched_at": "timestamp with time zone DEFAULT now()",
+    "embedding": "vector(1536)"
+  }
+}

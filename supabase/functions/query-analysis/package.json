@@ -1,0 +1,10 @@
+{
+  "name": "query-analysis",
+  "version": "1.0.0",
+  "description": "Query analysis edge function for search optimization",
+  "main": "index.ts",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "openai": "^4.28.0"
+  }
+} 
