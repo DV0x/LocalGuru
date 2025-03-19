@@ -3,10 +3,13 @@
 import { useState, useEffect } from "react";
 import { SearchBar } from "@/components/search-bar";
 import { ResultsContainer } from "@/components/results-container";
+import { StreamingResults } from "@/components/streaming-results";
 import { TravelRecommendation } from "@/components/result-card";
-import { Compass, RefreshCw } from "lucide-react";
+import { Compass, RefreshCw, Sparkles } from "lucide-react";
+import { useStreamingSearch } from "@/hooks/use-streaming-search";
 
 export default function Home() {
+  // State for traditional search
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -14,19 +17,33 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [processingTime, setProcessingTime] = useState<number | undefined>();
+  
+  // New state for AI toggle
+  const [useAISynthesis, setUseAISynthesis] = useState(false);
+  
+  // AI streaming search hook
+  const {
+    content,
+    isLoading: isAILoading,
+    searchResults: aiSearchResults,
+    search: aiSearch,
+    status,
+    statusMessage,
+    error: aiError
+  } = useStreamingSearch();
 
   // Handle hydration
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleSearch = async (searchQuery: string, skipCache = false) => {
+  // Traditional search implementation
+  const handleTraditionalSearch = async (searchQuery: string, skipCache = false) => {
     setQuery(searchQuery);
     setIsLoading(true);
     setError(undefined);
 
     try {
-      // Use our new API route instead of calling Supabase Edge Function directly
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: {
@@ -46,16 +63,9 @@ export default function Home() {
       }
 
       const data = await response.json();
-      
-      // The results are already formatted by our backend API
       setResults(data.results);
-      
-      // Store cache status and processing time
       setIsCached(data.cached || false);
       setProcessingTime(data.processingTime);
-      
-      // You could also store and use the analysis data if needed
-      // console.log('Query analysis:', data.analysis);
     } catch (err) {
       console.error("Search error:", err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
@@ -64,16 +74,26 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+  
+  // Combined search handler
+  const handleSearch = (searchQuery: string) => {
+    if (useAISynthesis) {
+      // Use AI synthesis
+      aiSearch(searchQuery);
+    } else {
+      // Use traditional search
+      handleTraditionalSearch(searchQuery);
+    }
+  };
 
   const handleRefresh = () => {
     if (query) {
-      handleSearch(query, true); // Skip cache to get fresh results
+      handleTraditionalSearch(query, true); // Skip cache
     }
   };
 
   const handleFeedback = async (id: string, isPositive: boolean) => {
     try {
-      // Use our new API route instead of calling Supabase Edge Function directly
       await fetch('/api/feedback', {
         method: 'POST',
         headers: {
@@ -88,16 +108,15 @@ export default function Home() {
       });
       
       console.log(`Feedback for recommendation ${id}: ${isPositive ? 'positive' : 'negative'}`);
-      
-      // Optional: You could update the UI to show that feedback was received
-      // For example, disable the feedback buttons for this result or show a thank you message
     } catch (error) {
       console.error("Error sending feedback:", error);
-      // Optionally show a toast notification for the error
     }
   };
-
-  const hasResults = isLoading || error || results.length > 0;
+  
+  // Determine if we have results to show
+  const hasTraditionalResults = isLoading || error || results.length > 0;
+  const hasAIResults = isAILoading || aiError || aiSearchResults.length > 0 || content;
+  const hasResults = useAISynthesis ? hasAIResults : hasTraditionalResults;
 
   if (!mounted) {
     // Return a placeholder with the same structure to avoid layout shift
@@ -137,37 +156,67 @@ export default function Home() {
         </p>
         
         <div className="w-full px-4 md:px-0 max-w-2xl mx-auto">
-          <SearchBar onSearch={handleSearch} isLoading={isLoading} />
+          <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
+            <div className="w-full">
+              <SearchBar onSearch={handleSearch} isLoading={useAISynthesis ? isAILoading : isLoading} />
+            </div>
+            
+            <button
+              onClick={() => setUseAISynthesis(!useAISynthesis)}
+              className={`flex items-center gap-2 py-2 px-4 rounded-md transition-colors ${
+                useAISynthesis 
+                  ? 'bg-primary/20 text-primary border border-primary/20' 
+                  : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+              }`}
+            >
+              <Sparkles size={16} />
+              <span className="text-sm">AI Synthesis</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {hasResults && (
-        <div className="w-full mt-8 max-w-3xl mx-auto">
-          {results.length > 0 && (
-            <div className="flex justify-between items-center mb-4">
-              <div className="text-sm text-gray-400">
-                {results.length} results {processingTime !== undefined && `(${processingTime}ms)`}
-                {isCached && <span className="ml-2 text-amber-400">(Cached)</span>}
-              </div>
-              {isCached && (
-                <button 
-                  onClick={handleRefresh}
-                  className="flex items-center text-sm text-primary hover:text-primary/80 transition-colors"
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                  Refresh
-                </button>
+        <>
+          {useAISynthesis ? (
+            // AI Streaming Results
+            <StreamingResults
+              content={content}
+              searchResults={aiSearchResults}
+              isLoading={isAILoading}
+              status={status}
+              statusMessage={statusMessage}
+            />
+          ) : (
+            // Traditional Results
+            <div className="w-full mt-8 max-w-3xl mx-auto">
+              {results.length > 0 && (
+                <div className="flex justify-between items-center mb-4">
+                  <div className="text-sm text-gray-400">
+                    {results.length} results {processingTime !== undefined && `(${processingTime}ms)`}
+                    {isCached && <span className="ml-2 text-amber-400">(Cached)</span>}
+                  </div>
+                  {isCached && (
+                    <button 
+                      onClick={handleRefresh}
+                      className="flex items-center text-sm text-primary hover:text-primary/80 transition-colors"
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      Refresh
+                    </button>
+                  )}
+                </div>
               )}
+              <ResultsContainer
+                results={results}
+                isLoading={isLoading}
+                error={error}
+                onFeedback={handleFeedback}
+              />
             </div>
           )}
-          <ResultsContainer
-            results={results}
-            isLoading={isLoading}
-            error={error}
-            onFeedback={handleFeedback}
-          />
-        </div>
+        </>
       )}
     </main>
   );
