@@ -3,11 +3,13 @@
  * 
  * This script fetches data from Reddit for the past 7 days
  * with extreme resilience against network issues and database constraints.
+ * Based on the proven asksf-resilient-fixed.ts script.
  * 
  * Features:
  * - Focuses only on recent (7 days) data
  * - Aggressive retry mechanisms for network failures
  * - Proper foreign key constraint handling
+ * - Extensive pauses between operations
  * - Enhanced error logging and recovery
  * - Retry queue for failed comment batches
  * - Visual progress tracking
@@ -27,10 +29,10 @@ dotenv.config();
 // Create logger
 const logger = new Logger('DailyRedditUpdate');
 
-// Configuration
+// Configuration - keeping the same values as the proven script
 const SUBREDDIT = 'AskSF';
-const MAX_RETRIES = 10;
-const BATCH_SIZE = 15;
+const MAX_RETRIES = 15;
+const BATCH_SIZE = 15; // Reduced from 20 for better reliability
 const NETWORK_RETRY_DELAY = 30000; // 30 seconds
 const BATCH_PAUSE = 15000; // 15 seconds
 const POST_COMMENT_PAUSE = 10000; // 10 seconds
@@ -49,7 +51,7 @@ interface RetryQueueItem {
 
 const commentRetryQueue: RetryQueueItem[] = [];
 
-// Define quarters to fetch - focusing on just 7 days of data
+// Define quarters to fetch - ONLY MODIFICATION: focusing on just 7 days of data
 const QUARTERS = [
   // Recent data (last 7 days) with all sort types
   { name: 'Recent New', sort: 'new', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
@@ -339,7 +341,7 @@ async function fetchDailyReddit(): Promise<void> {
       disableTriggers: config.database.disableTriggers || false
     });
     
-    // Create RedditFetcher with proper user agent and longer delay
+    // Create RedditFetcher with proper user agent and rate limiting
     const fetcher = new RedditFetcher({
       userAgent: process.env.REDDIT_USER_AGENT || 'script:com.localguru.redditfetcher:v1.0.0',
       requestDelay: 10000, // 10 seconds between requests - more conservative

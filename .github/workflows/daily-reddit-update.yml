@@ -29,13 +29,6 @@ jobs:
           echo "REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID != '' }}"
           echo "REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME != '' }}"
       
-      - name: Verify file structure
-        run: |
-          echo "=== Repository structure ==="
-          find localguru-ingestion -type f -name "*.ts" | grep -v "node_modules" | sort
-          echo "=== Checking for daily script ==="
-          ls -la localguru-ingestion/src/scripts/daily-reddit-update.ts || echo "File not found"
-      
       - name: Install dependencies
         run: |
           cd localguru-ingestion
@@ -50,7 +43,7 @@ jobs:
           cd localguru-ingestion
           mkdir -p logs
       
-      - name: Run Reddit update script with verbose logging
+      - name: Run daily Reddit data collection
         env:
           # Supabase credentials - using the correct secret names
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
