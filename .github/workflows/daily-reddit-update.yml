@@ -58,23 +58,25 @@ jobs:
           path: localguru-ingestion/logs/${{ steps.run_script.outputs.log_filename }}
           retention-days: 7
       
-      # Only run email notification if all required email secrets are set
-      - name: Send failure notification (if email configured)
-        if: failure() && secrets.MAIL_RECIPIENT != ''
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_SERVER }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "❌ Reddit Data Update Failed"
-          body: |
-            The daily Reddit data update job failed.
-            
-            Repository: ${{ github.repository }}
-            Workflow: ${{ github.workflow }}
-            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            Please check the logs for more details.
-          to: ${{ secrets.MAIL_RECIPIENT }}
-          from: GitHub Actions 
+      # Optional email notification - manually added when needed
+      # Uncomment and configure this section after setting up email secrets
+      # 
+      # - name: Send failure notification
+      #   if: failure()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.MAIL_SERVER }}
+      #     server_port: ${{ secrets.MAIL_PORT }}
+      #     username: ${{ secrets.MAIL_USERNAME }}
+      #     password: ${{ secrets.MAIL_PASSWORD }}
+      #     subject: "❌ Reddit Data Update Failed"
+      #     body: |
+      #       The daily Reddit data update job failed.
+      #       
+      #       Repository: ${{ github.repository }}
+      #       Workflow: ${{ github.workflow }}
+      #       Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       
+      #       Please check the logs for more details.
+      #     to: ${{ secrets.MAIL_RECIPIENT }}
+      #     from: GitHub Actions 
