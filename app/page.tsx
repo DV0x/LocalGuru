@@ -19,7 +19,7 @@ export default function Home() {
   const [processingTime, setProcessingTime] = useState<number | undefined>();
   
   // New state for AI toggle
-  const [useAISynthesis, setUseAISynthesis] = useState(false);
+  const [useAISynthesis, setUseAISynthesis] = useState(true);
   
   // AI streaming search hook
   const {
@@ -143,8 +143,8 @@ export default function Home() {
   }
 
   return (
-    <main className={`flex min-h-screen flex-col ${hasResults ? 'pt-12 pb-20 items-center' : 'items-center justify-center'} p-4 md:p-8 lg:p-12 bg-[#0f0f0f]`}>
-      <div className={`w-full max-w-3xl mx-auto ${hasResults ? 'mb-8' : ''} text-center flex flex-col items-center`}>
+    <main className={`flex min-h-screen flex-col ${hasResults ? 'items-center pt-12 pb-20' : 'items-center justify-center'} p-4 md:p-8 lg:p-12 bg-[#0f0f0f]`}>
+      <div className={`w-full max-w-3xl mx-auto ${hasResults ? 'mb-8' : ''} text-center flex flex-col items-center ${!hasResults ? 'justify-center' : ''}`}>
         <div className="flex justify-center mb-6">
           <div className="bg-primary/10 p-3 rounded-full">
             <Compass className="h-10 w-10 text-primary" />
@@ -155,23 +155,10 @@ export default function Home() {
           Discover hidden gems and local insights for your next adventure
         </p>
         
-        <div className="w-full px-4 md:px-0 max-w-2xl mx-auto">
-          <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
-            <div className="w-full">
-              <SearchBar onSearch={handleSearch} isLoading={useAISynthesis ? isAILoading : isLoading} />
-            </div>
-            
-            <button
-              onClick={() => setUseAISynthesis(!useAISynthesis)}
-              className={`flex items-center gap-2 py-2 px-4 rounded-md transition-colors ${
-                useAISynthesis 
-                  ? 'bg-primary/20 text-primary border border-primary/20' 
-                  : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-              }`}
-            >
-              <Sparkles size={16} />
-              <span className="text-sm">AI Synthesis</span>
-            </button>
+        <div className="w-full px-4 md:px-0 max-w-2xl mx-auto relative">
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 via-purple-500/5 to-primary/20 rounded-2xl blur-xl opacity-30 animate-pulse" style={{ pointerEvents: 'none' }}></div>
+          <div className="relative w-full backdrop-blur-sm z-10">
+            <SearchBar onSearch={handleSearch} isLoading={useAISynthesis ? isAILoading : isLoading} />
           </div>
         </div>
       </div>

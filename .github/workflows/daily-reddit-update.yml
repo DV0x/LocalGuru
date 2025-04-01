@@ -1,0 +1,78 @@
+name: Daily Reddit Data Update
+
+on:
+  schedule:
+    # Run at 4:30 AM UTC (adjust as needed for your timezone)
+    - cron: '30 4 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  update-reddit-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          cd localguru-ingestion
+          npm ci
+      
+      - name: Create logs directory
+        run: |
+          cd localguru-ingestion
+          mkdir -p logs
+      
+      - name: Run Reddit update script
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          cd localguru-ingestion
+          DATE=$(date +%Y-%m-%d)
+          echo "========== Starting Reddit update at $(date) ==========" > logs/reddit-$DATE.log
+          npx ts-node src/scripts/daily-reddit-update.ts >> logs/reddit-$DATE.log 2>&1
+          EXIT_CODE=$?
+          echo "========== Finished at $(date) with exit code $EXIT_CODE ==========" >> logs/reddit-$DATE.log
+          
+          # Upload log as artifact
+          echo "::set-output name=log_filename::reddit-$DATE.log"
+          
+          # Exit with the same code as the script
+          exit $EXIT_CODE
+        id: run_script
+      
+      - name: Upload log as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: reddit-update-logs
+          path: localguru-ingestion/logs/${{ steps.run_script.outputs.log_filename }}
+          retention-days: 7
+      
+      - name: Send failure notification (if needed)
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "❌ Reddit Data Update Failed"
+          body: |
+            The daily Reddit data update job failed.
+            
+            Repository: ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            Please check the logs for more details.
+          to: ${{ secrets.MAIL_RECIPIENT }}
+          from: GitHub Actions 

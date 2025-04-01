@@ -69,6 +69,29 @@
   }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 240 10% 3.9%;
@@ -209,4 +232,17 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Global text selection styles */
+::selection {
+  background-color: rgba(139, 92, 246, 0.7) !important; /* Purple with 70% opacity */
+  color: white !important;
+  text-shadow: none !important;
+}
+
+::-moz-selection {
+  background-color: rgba(139, 92, 246, 0.7) !important;
+  color: white !important;
+  text-shadow: none !important;
 }
