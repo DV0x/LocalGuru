@@ -22,6 +22,7 @@ import { RedditFetcher, RedditPost, RedditComment } from '../fetchers';
 import { ChangeDetector } from '../processors';
 import { config } from '../config';
 import path from 'path';
+import { RedditAPI } from '../fetchers';
 
 // Load environment variables
 dotenv.config();
@@ -316,6 +317,38 @@ async function processQuarterWithRetry(
   }
 }
 
+// Additional function to verify Reddit API credentials before starting
+async function verifyRedditCredentials(userAgent: string, clientId?: string, clientSecret?: string): Promise<boolean> {
+  logger.info('Testing Reddit API credentials...');
+  
+  if (!clientId || !clientSecret) {
+    logger.error('Reddit API credentials are missing');
+    return false;
+  }
+  
+  try {
+    // Create a temporary RedditAPI instance for testing
+    const testApi = new RedditAPI({
+      userAgent,
+      clientId,
+      clientSecret,
+      requestDelay: 1000
+    });
+    
+    // Try a simple, read-only request
+    await testApi.get('/api/v1/me', {});
+    logger.info('✅ Reddit API credentials verified successfully');
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`❌ Reddit API credential verification failed: ${errorMessage}`);
+    if (errorMessage.includes('403')) {
+      logger.error('This is an authentication error. Please check your Reddit API credentials.');
+    }
+    return false;
+  }
+}
+
 // Main function
 async function fetchDailyReddit(): Promise<void> {
   logger.info('Starting daily Reddit data fetch');
@@ -333,6 +366,21 @@ async function fetchDailyReddit(): Promise<void> {
       logger.error('Supabase URL and key must be provided in environment variables');
       process.exit(1);
     }
+    
+    // Get Reddit API credentials
+    const redditUserAgent = process.env.REDDIT_USER_AGENT || 'script:com.localguru.redditfetcher:v1.0.0';
+    const redditClientId = process.env.REDDIT_CLIENT_ID;
+    const redditClientSecret = process.env.REDDIT_CLIENT_SECRET;
+    const redditUsername = process.env.REDDIT_USERNAME;
+    const redditPassword = process.env.REDDIT_PASSWORD;
+    
+    // Verify Reddit API credentials before proceeding
+    const credentialsValid = await verifyRedditCredentials(redditUserAgent, redditClientId, redditClientSecret);
+    if (!credentialsValid) {
+      logger.error('Reddit API credentials failed verification. Data collection may fail with 403 errors.');
+      console.log('⚠️ WARNING: Reddit API credentials failed verification!');
+      console.log('Continuing anyway, but expect 403 Forbidden errors...');
+    }
 
     // Create required objects
     const dbHandler = new DBHandler(supabaseUrl, supabaseKey, {
@@ -343,10 +391,21 @@ async function fetchDailyReddit(): Promise<void> {
     
     // Create RedditFetcher with proper user agent and rate limiting
     const fetcher = new RedditFetcher({
-      userAgent: process.env.REDDIT_USER_AGENT || 'script:com.localguru.redditfetcher:v1.0.0',
+      userAgent: redditUserAgent,
       requestDelay: 10000, // 10 seconds between requests - more conservative
-      checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT)
+      checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT),
+      // Add these credentials for OAuth authentication
+      clientId: redditClientId,
+      clientSecret: redditClientSecret,
+      username: redditUsername,
+      password: redditPassword
     });
+    
+    // Log authentication details (without revealing secrets)
+    logger.info(`Reddit authentication setup with client ID: ${redditClientId ? 'PROVIDED' : 'MISSING'}, username: ${redditUsername || 'MISSING'}`);
+    if (!redditClientId || !redditClientSecret || !redditUsername || !redditPassword) {
+      logger.warn('Reddit API credentials are incomplete. This may cause 403 authentication errors.');
+    }
     
     // Create change detector
     const changeDetector = new ChangeDetector({

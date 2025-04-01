@@ -72,13 +72,32 @@ jobs:
           echo "Working directory: $(pwd)" >> $LOG_FILE
           echo "Script path exists: $(test -f src/scripts/daily-reddit-update.ts && echo 'Yes' || echo 'No')" >> $LOG_FILE
           
-          # Check if env vars are set (without revealing values)
+          # More detailed credential checks - while keeping secrets secure
+          echo "=== Credential checks (without showing values) ===" >> $LOG_FILE
           echo "SUPABASE_URL set: $(test -n "$SUPABASE_URL" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "NEXT_PUBLIC_SUPABASE_URL set: $(test -n "$NEXT_PUBLIC_SUPABASE_URL" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "SUPABASE_SERVICE_ROLE_KEY set: $(test -n "$SUPABASE_SERVICE_ROLE_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY set: $(test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
-          echo "Reddit credentials set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
-          echo "Reddit user agent: $REDDIT_USER_AGENT" >> $LOG_FILE
+          
+          # Reddit credential checks - critical for the 403 error
+          echo "REDDIT_CLIENT_ID set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_CLIENT_SECRET set: $(test -n "$REDDIT_CLIENT_SECRET" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_USERNAME set: $(test -n "$REDDIT_USERNAME" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_PASSWORD set: $(test -n "$REDDIT_PASSWORD" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_USER_AGENT: $REDDIT_USER_AGENT" >> $LOG_FILE
+          
+          # Check character count of credentials to validate they're not empty strings
+          if [ -n "$REDDIT_CLIENT_ID" ]; then
+            echo "REDDIT_CLIENT_ID length: ${#REDDIT_CLIENT_ID} chars" >> $LOG_FILE
+          else
+            echo "WARNING: REDDIT_CLIENT_ID is empty!" >> $LOG_FILE
+          fi
+          
+          if [ -n "$REDDIT_USERNAME" ]; then
+            echo "REDDIT_USERNAME length: ${#REDDIT_USERNAME} chars" >> $LOG_FILE
+          else
+            echo "WARNING: REDDIT_USERNAME is empty!" >> $LOG_FILE
+          fi
           
           echo "=== Starting script execution ===" >> $LOG_FILE
           
@@ -98,10 +117,15 @@ jobs:
           npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
           EXIT_CODE=$?
           
-          # Verify if the script actually processed any data
+          # Improved error detection - looking specifically for 403 Forbidden
           if grep -q "Posts processed: 0" $LOG_FILE && grep -q "403" $LOG_FILE; then
             echo "WARNING: Script completed but processed 0 posts and encountered 403 errors!" >> $LOG_FILE
-            echo "This likely indicates a problem with Reddit API authentication." >> $LOG_FILE
+            echo "This indicates a problem with Reddit API authentication." >> $LOG_FILE
+            echo "Please check:" >> $LOG_FILE
+            echo "1. Your Reddit API credentials are correctly set in GitHub secrets" >> $LOG_FILE
+            echo "2. The account has been verified (new Reddit accounts may have limitations)" >> $LOG_FILE
+            echo "3. Your app is properly registered at https://www.reddit.com/prefs/apps" >> $LOG_FILE
+            echo "4. Your user agent follows the proper format: script:bot_name:version (by /u/username)" >> $LOG_FILE
             EXIT_CODE=1
           fi
           

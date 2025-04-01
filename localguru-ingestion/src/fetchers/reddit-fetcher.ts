@@ -154,13 +154,26 @@ export class RedditFetcher {
     userAgent: string;
     requestDelay?: number;
     checkpointDir?: string;
+    clientId?: string;
+    clientSecret?: string;
+    username?: string;
+    password?: string;
   }) {
     this.api = new RedditAPI({
       userAgent: config.userAgent,
-      requestDelay: config.requestDelay
+      requestDelay: config.requestDelay,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret
     });
     this.logger = new Logger('RedditFetcher');
     this.checkpointDir = config.checkpointDir || path.join(process.cwd(), 'checkpoints');
+    
+    // Log authentication setup
+    if (config.clientId && config.clientSecret) {
+      this.logger.info('Initialized with Reddit API credentials');
+    } else {
+      this.logger.warn('Initialized without Reddit API credentials - may face authentication issues');
+    }
     
     // Ensure checkpoint directory exists
     if (!fs.existsSync(this.checkpointDir)) {
