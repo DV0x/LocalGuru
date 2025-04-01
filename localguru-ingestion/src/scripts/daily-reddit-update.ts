@@ -339,10 +339,10 @@ async function fetchDailyReddit(): Promise<void> {
       disableTriggers: config.database.disableTriggers || false
     });
     
-    // Create RedditFetcher with very lenient rate limiting
+    // Create RedditFetcher with proper user agent and longer delay
     const fetcher = new RedditFetcher({
-      userAgent: 'LocalGuru/1.0',
-      requestDelay: 5000, // 5 seconds between requests
+      userAgent: process.env.REDDIT_USER_AGENT || 'script:com.localguru.redditfetcher:v1.0.0',
+      requestDelay: 10000, // 10 seconds between requests - more conservative
       checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT)
     });
     

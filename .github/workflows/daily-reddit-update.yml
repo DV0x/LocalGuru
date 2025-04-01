@@ -63,7 +63,7 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
-          REDDIT_USER_AGENT: "LocalGuru/1.0 (by /u/${{ secrets.REDDIT_USERNAME }})"
+          REDDIT_USER_AGENT: "script:com.localguru.redditfetcher:v1.0.0 (by /u/${{ secrets.REDDIT_USERNAME }})"
           
           # Development mode for verbose logging
           NODE_ENV: "development"
@@ -85,6 +85,7 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY set: $(test -n "$SUPABASE_SERVICE_ROLE_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY set: $(test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "Reddit credentials set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "Reddit user agent: $REDDIT_USER_AGENT" >> $LOG_FILE
           
           echo "=== Starting script execution ===" >> $LOG_FILE
           
@@ -103,6 +104,13 @@ jobs:
           # Run with more verbose output
           npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
           EXIT_CODE=$?
+          
+          # Verify if the script actually processed any data
+          if grep -q "Posts processed: 0" $LOG_FILE && grep -q "403" $LOG_FILE; then
+            echo "WARNING: Script completed but processed 0 posts and encountered 403 errors!" >> $LOG_FILE
+            echo "This likely indicates a problem with Reddit API authentication." >> $LOG_FILE
+            EXIT_CODE=1
+          fi
           
           # Clean up temporary .env file
           rm .env
