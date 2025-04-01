@@ -54,10 +54,11 @@ const commentRetryQueue: RetryQueueItem[] = [];
 
 // Define quarters to fetch - ONLY MODIFICATION: focusing on just 7 days of data
 const QUARTERS = [
-  // Recent data (last 7 days) with all sort types
+  // Recent data (last 7 days) with all sort types - one sort type at a time for better resilience
   { name: 'Recent New', sort: 'new', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Top', sort: 'top', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Hot', sort: 'hot', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
+  // Use type assertions for sorts not in the standard types
   { name: 'Recent Best', sort: 'best' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Controversial', sort: 'controversial' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Rising', sort: 'rising' as any, limit: 300, fetchAllTime: false, maxAgeHours: 24 * 7 }
@@ -317,33 +318,29 @@ async function processQuarterWithRetry(
   }
 }
 
-// Additional function to verify Reddit API credentials before starting
-async function verifyRedditCredentials(userAgent: string, clientId?: string, clientSecret?: string): Promise<boolean> {
-  logger.info('Testing Reddit API credentials...');
-  
-  if (!clientId || !clientSecret) {
-    logger.error('Reddit API credentials are missing');
-    return false;
-  }
+// Additional function to verify Reddit API connectivity without OAuth
+async function verifyRedditConnectivity(userAgent: string): Promise<boolean> {
+  logger.info('Testing Reddit API connectivity...');
   
   try {
-    // Create a temporary RedditAPI instance for testing
+    // Create a temporary RedditAPI instance for testing - using simple method without OAuth
     const testApi = new RedditAPI({
       userAgent,
-      clientId,
-      clientSecret,
-      requestDelay: 1000
+      requestDelay: 2000
     });
     
-    // Try a simple, read-only request
-    await testApi.get('/api/v1/me', {});
-    logger.info('✅ Reddit API credentials verified successfully');
+    // Try a simple public endpoint
+    await testApi.get('/r/AskSF/about.json', {});
+    logger.info('✅ Reddit API connectivity verified successfully');
     return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`❌ Reddit API credential verification failed: ${errorMessage}`);
+    logger.error(`❌ Reddit API connectivity test failed: ${errorMessage}`);
     if (errorMessage.includes('403')) {
-      logger.error('This is an authentication error. Please check your Reddit API credentials.');
+      logger.error('Access forbidden - this may be due to Reddit rate limiting. Using proper user-agent is important.');
+      logger.error('Recommended format: script:bot_name:version (by /u/username)');
+    } else if (errorMessage.includes('429')) {
+      logger.error('Rate limit exceeded. The script will use conservative rate limiting.');
     }
     return false;
   }
@@ -374,11 +371,11 @@ async function fetchDailyReddit(): Promise<void> {
     const redditUsername = process.env.REDDIT_USERNAME;
     const redditPassword = process.env.REDDIT_PASSWORD;
     
-    // Verify Reddit API credentials before proceeding
-    const credentialsValid = await verifyRedditCredentials(redditUserAgent, redditClientId, redditClientSecret);
-    if (!credentialsValid) {
-      logger.error('Reddit API credentials failed verification. Data collection may fail with 403 errors.');
-      console.log('⚠️ WARNING: Reddit API credentials failed verification!');
+    // Verify Reddit API connectivity before proceeding
+    const connectivityValid = await verifyRedditConnectivity(redditUserAgent);
+    if (!connectivityValid) {
+      logger.error('Reddit API connectivity failed verification. Data collection may fail with 403 errors.');
+      console.log('⚠️ WARNING: Reddit API connectivity failed verification!');
       console.log('Continuing anyway, but expect 403 Forbidden errors...');
     }
 
@@ -389,23 +386,16 @@ async function fetchDailyReddit(): Promise<void> {
       disableTriggers: config.database.disableTriggers || false
     });
     
-    // Create RedditFetcher with proper user agent and rate limiting
+    // Create RedditFetcher with very lenient rate limiting
     const fetcher = new RedditFetcher({
-      userAgent: redditUserAgent,
-      requestDelay: 10000, // 10 seconds between requests - more conservative
-      checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT),
-      // Add these credentials for OAuth authentication
-      clientId: redditClientId,
-      clientSecret: redditClientSecret,
-      username: redditUsername,
-      password: redditPassword
+      userAgent: 'LocalGuru/1.0', // Using exact same user agent as in working script
+      requestDelay: 5000, // 5 seconds between requests - same as working script
+      checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT)
     });
     
-    // Log authentication details (without revealing secrets)
-    logger.info(`Reddit authentication setup with client ID: ${redditClientId ? 'PROVIDED' : 'MISSING'}, username: ${redditUsername || 'MISSING'}`);
-    if (!redditClientId || !redditClientSecret || !redditUsername || !redditPassword) {
-      logger.warn('Reddit API credentials are incomplete. This may cause 403 authentication errors.');
-    }
+    logger.info(`Reddit fetcher initialized with same configuration as proven asksf-resilient-fixed.ts script`);
+    logger.info(`Using requestDelay: 5000ms to ensure proper rate limiting`);
+    logger.info(`Checkpoint directory: ${path.join(process.cwd(), 'checkpoints', SUBREDDIT)}`);
     
     // Create change detector
     const changeDetector = new ChangeDetector({

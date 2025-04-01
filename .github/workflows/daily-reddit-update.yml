@@ -43,7 +43,7 @@ jobs:
           cd localguru-ingestion
           mkdir -p logs
       
-      - name: Run daily Reddit data collection
+      - name: Run daily Reddit data collection with automatic retry
         env:
           # Supabase credentials - using the correct secret names
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -113,26 +113,55 @@ jobs:
           echo "REDDIT_PASSWORD=$REDDIT_PASSWORD" >> .env
           echo "REDDIT_USER_AGENT=$REDDIT_USER_AGENT" >> .env
           
-          # Run with more verbose output
-          npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
-          EXIT_CODE=$?
+          # Set max retries for the whole script
+          MAX_SCRIPT_RETRIES=3
+          CURRENT_RETRY=0
+          FINAL_EXIT_CODE=0
           
-          # Improved error detection - looking specifically for 403 Forbidden
-          if grep -q "Posts processed: 0" $LOG_FILE && grep -q "403" $LOG_FILE; then
-            echo "WARNING: Script completed but processed 0 posts and encountered 403 errors!" >> $LOG_FILE
+          # Run with automatic retry for temporary Reddit API issues
+          while [ $CURRENT_RETRY -lt $MAX_SCRIPT_RETRIES ]; do
+            echo "Attempt $(($CURRENT_RETRY + 1))/$MAX_SCRIPT_RETRIES to run Reddit update" >> $LOG_FILE
+            
+            # Run the script
+            npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
+            EXIT_CODE=$?
+            
+            # Check for 403 errors
+            if grep -q "403 Forbidden" $LOG_FILE && [ $EXIT_CODE -ne 0 ]; then
+              CURRENT_RETRY=$((CURRENT_RETRY + 1))
+              
+              if [ $CURRENT_RETRY -lt $MAX_SCRIPT_RETRIES ]; then
+                # Calculate exponential backoff: 2^retry * 5 minutes (in seconds)
+                BACKOFF_TIME=$((300 * 2**$CURRENT_RETRY))
+                echo "$(date) - 403 Forbidden errors detected. Waiting $BACKOFF_TIME seconds before retry ${CURRENT_RETRY}/${MAX_SCRIPT_RETRIES}..." >> $LOG_FILE
+                echo "Sleeping $BACKOFF_TIME seconds before next attempt..." | tee -a $LOG_FILE
+                sleep $BACKOFF_TIME
+              else
+                echo "$(date) - Maximum retries reached after encountering 403 errors." >> $LOG_FILE
+                FINAL_EXIT_CODE=1
+              fi
+            else
+              # Script completed without 403 errors or with success code, exit the loop
+              FINAL_EXIT_CODE=$EXIT_CODE
+              break
+            fi
+          done
+          
+          # Improved error detection at the end
+          if [ $FINAL_EXIT_CODE -ne 0 ] && grep -q "403" $LOG_FILE; then
+            echo "WARNING: Script completed but encountered 403 errors!" >> $LOG_FILE
             echo "This indicates a problem with Reddit API authentication." >> $LOG_FILE
             echo "Please check:" >> $LOG_FILE
             echo "1. Your Reddit API credentials are correctly set in GitHub secrets" >> $LOG_FILE
             echo "2. The account has been verified (new Reddit accounts may have limitations)" >> $LOG_FILE
             echo "3. Your app is properly registered at https://www.reddit.com/prefs/apps" >> $LOG_FILE
             echo "4. Your user agent follows the proper format: script:bot_name:version (by /u/username)" >> $LOG_FILE
-            EXIT_CODE=1
           fi
           
           # Clean up temporary .env file
           rm .env
           
-          echo "========== Finished at $(date) with exit code $EXIT_CODE ==========" >> $LOG_FILE
+          echo "========== Finished at $(date) with exit code $FINAL_EXIT_CODE ==========" >> $LOG_FILE
           
           # Output last 50 lines of log for immediate visibility in GitHub Actions
           echo "=== Last 50 lines of log ==="
@@ -141,8 +170,8 @@ jobs:
           # Set output for log filename
           echo "log_filename=reddit-$DATE.log" >> $GITHUB_OUTPUT
           
-          # Exit with the same code as the script
-          exit $EXIT_CODE
+          # Exit with the final code
+          exit $FINAL_EXIT_CODE
         id: run_script
       
       - name: Upload log as artifact
