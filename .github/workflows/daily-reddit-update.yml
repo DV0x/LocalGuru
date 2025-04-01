@@ -21,27 +21,65 @@ jobs:
           node-version: '18'
           cache: 'npm'
       
+      - name: Verify file structure
+        run: |
+          echo "=== Repository structure ==="
+          find localguru-ingestion -type f -name "*.ts" | grep -v "node_modules" | sort
+          echo "=== Checking for daily script ==="
+          ls -la localguru-ingestion/src/scripts/daily-reddit-update.ts || echo "File not found"
+      
       - name: Install dependencies
         run: |
           cd localguru-ingestion
           npm ci
+          
+          # List installed packages for debugging
+          echo "=== Installed packages ==="
+          npm list --depth=0
       
       - name: Create logs directory
         run: |
           cd localguru-ingestion
           mkdir -p logs
       
-      - name: Run Reddit update script
+      - name: Run Reddit update script with verbose logging
         env:
+          # Supabase credentials
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          
+          # Reddit API credentials
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          REDDIT_USER_AGENT: "LocalGuru/1.0 (by /u/${{ secrets.REDDIT_USERNAME }})"
+          
+          # Development mode for verbose logging
+          NODE_ENV: "development"
         run: |
           cd localguru-ingestion
           DATE=$(date +%Y-%m-%d)
-          echo "========== Starting Reddit update at $(date) ==========" > logs/reddit-$DATE.log
-          npx ts-node src/scripts/daily-reddit-update.ts >> logs/reddit-$DATE.log 2>&1
+          LOG_FILE="logs/reddit-$DATE.log"
+          
+          echo "========== Starting Reddit update at $(date) ==========" > $LOG_FILE
+          echo "=== Environment ===" >> $LOG_FILE
+          echo "Node version: $(node -v)" >> $LOG_FILE
+          echo "NPM version: $(npm -v)" >> $LOG_FILE
+          echo "Working directory: $(pwd)" >> $LOG_FILE
+          echo "Script path exists: $(test -f src/scripts/daily-reddit-update.ts && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "Reddit credentials set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "=== Starting script execution ===" >> $LOG_FILE
+          
+          # Run with more verbose output
+          npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
           EXIT_CODE=$?
-          echo "========== Finished at $(date) with exit code $EXIT_CODE ==========" >> logs/reddit-$DATE.log
+          
+          echo "========== Finished at $(date) with exit code $EXIT_CODE ==========" >> $LOG_FILE
+          
+          # Output last 50 lines of log for immediate visibility in GitHub Actions
+          echo "=== Last 50 lines of log ==="
+          tail -n 50 $LOG_FILE
           
           # Set output for log filename
           echo "log_filename=reddit-$DATE.log" >> $GITHUB_OUTPUT
