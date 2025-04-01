@@ -2,13 +2,17 @@
  * Daily Reddit Update Script
  * 
  * This script is based directly on the proven asksf-resilient-fixed.ts script,
- * with only the time range modified to focus on the last 7 days.
+ * with modifications to ensure reliability in GitHub Actions environment:
+ * - Skips problematic "Rising" sort in GitHub Actions
+ * - Uses longer delays between requests in GitHub Actions
+ * - Implements proper OAuth authentication when in GitHub Actions
+ * - Focuses on last 7 days of data
  */
 
 import dotenv from 'dotenv';
 import { Logger } from '../utils/logger';
 import { DBHandler } from '../db/db-handler';
-import { RedditFetcher, RedditPost, RedditComment } from '../fetchers';
+import { RedditFetcher, RedditPost, RedditComment, RedditAPI } from '../fetchers';
 import { ChangeDetector } from '../processors';
 import { config } from '../config';
 import path from 'path';
@@ -19,17 +23,27 @@ dotenv.config();
 // Create logger
 const logger = new Logger('DailyRedditUpdate');
 
-// Configuration - IDENTICAL to asksf-resilient-fixed.ts
+// Detect if running in GitHub Actions
+const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+if (isGitHubActions) {
+  logger.info('Running in GitHub Actions environment - using more conservative settings');
+} else {
+  logger.info('Running in local environment');
+}
+
+// Configuration - IDENTICAL to asksf-resilient-fixed.ts but with environment-based adjustments
 const SUBREDDIT = 'AskSF';
 const MAX_RETRIES = 15;
 const BATCH_SIZE = 15; // Reduced from 20 for better reliability
 const NETWORK_RETRY_DELAY = 30000; // 30 seconds
-const BATCH_PAUSE = 15000; // 15 seconds
-const POST_COMMENT_PAUSE = 10000; // 10 seconds
+// Increase pauses for GitHub Actions
+const BATCH_PAUSE = isGitHubActions ? 30000 : 15000; // 30 seconds in GitHub Actions, 15 seconds locally
+const POST_COMMENT_PAUSE = isGitHubActions ? 20000 : 10000; // 20 seconds in GitHub Actions, 10 seconds locally
 const ERROR_PAUSE = 60000; // 1 minute
 const COMMENT_BATCH_SIZE = 3; // Very small batches for comments
-const COMMENT_BATCH_PAUSE = 5000; // 5 seconds between comment batches
+const COMMENT_BATCH_PAUSE = isGitHubActions ? 10000 : 5000; // 10 seconds in GitHub Actions, 5 seconds locally
 const MAX_COMMENT_RETRY_ATTEMPTS = 3; // Maximum number of retry attempts for comment batches
+const QUARTER_PAUSE = isGitHubActions ? 180000 : 60000; // 3 minutes in GitHub Actions, 1 minute locally
 
 // Comment retry queue - IDENTICAL to asksf-resilient-fixed.ts
 interface RetryQueueItem {
@@ -41,16 +55,20 @@ interface RetryQueueItem {
 
 const commentRetryQueue: RetryQueueItem[] = [];
 
-// Define quarters to fetch - ONLY CHANGE: just the last 7 days
-const QUARTERS = [
+// Define quarters to fetch - Skip "Rising" sort in GitHub Actions
+let QUARTERS = [
   // Recent data (last 7 days) with all sort types
   { name: 'Recent New', sort: 'new', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Top', sort: 'top', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Hot', sort: 'hot', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Best', sort: 'best' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Controversial', sort: 'controversial' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
-  { name: 'Recent Rising', sort: 'rising' as any, limit: 300, fetchAllTime: false, maxAgeHours: 24 * 7 }
-] as const;
+];
+
+// Only include Rising sort if running locally
+if (!isGitHubActions) {
+  QUARTERS.push({ name: 'Recent Rising', sort: 'rising' as any, limit: 300, fetchAllTime: false, maxAgeHours: 24 * 7 });
+}
 
 // Global stats to track progress - IDENTICAL to asksf-resilient-fixed.ts
 const stats = {
@@ -306,12 +324,56 @@ async function processQuarterWithRetry(
   }
 }
 
+// Create a RedditFetcher with appropriate auth based on environment
+async function createRedditFetcher(): Promise<RedditFetcher> {
+  const checkpointDir = path.join(process.cwd(), 'checkpoints', SUBREDDIT);
+  
+  // If running in GitHub Actions, try to use OAuth authentication if credentials available
+  if (isGitHubActions && 
+      process.env.REDDIT_CLIENT_ID && 
+      process.env.REDDIT_CLIENT_SECRET && 
+      process.env.REDDIT_USERNAME && 
+      process.env.REDDIT_PASSWORD) {
+    
+    try {
+      logger.info('Running in GitHub Actions with OAuth credentials - using OAuth authentication');
+      
+      // Create a direct RedditFetcher with OAuth credentials
+      logger.info('Creating RedditFetcher with OAuth credentials');
+      return new RedditFetcher({
+        userAgent: 'LocalGuru/1.0 (GitHub Actions)',
+        requestDelay: 10000,  // Extra conservative 10 seconds between requests for GitHub Actions
+        checkpointDir,
+        clientId: process.env.REDDIT_CLIENT_ID,
+        clientSecret: process.env.REDDIT_CLIENT_SECRET,
+        username: process.env.REDDIT_USERNAME,
+        password: process.env.REDDIT_PASSWORD
+      });
+    } catch (authError) {
+      logger.error(`OAuth initialization failed: ${authError instanceof Error ? authError.message : String(authError)}`);
+      logger.info('Falling back to simple user agent authentication');
+    }
+  }
+  
+  // Default to simple user agent approach (works locally)
+  logger.info('Using simple user agent authentication');
+  return new RedditFetcher({
+    userAgent: 'LocalGuru/1.0',
+    requestDelay: isGitHubActions ? 10000 : 5000, // 10 seconds in GitHub Actions, 5 seconds locally
+    checkpointDir
+  });
+}
+
 // Main function - IDENTICAL to asksf-resilient-fixed.ts except for the message
 async function fetchDailyReddit(): Promise<void> {
-  logger.info('Starting daily Reddit data fetch (last 7 days only)');
+  logger.info(`Starting daily Reddit data fetch (last 7 days only) - ${isGitHubActions ? 'GitHub Actions' : 'Local'} environment`);
   console.log('\n🚀 STARTING DAILY REDDIT UPDATE (LAST 7 DAYS)');
   console.log('═════════════════════════════════════════════════════');
   console.log(`📊 Processing ${QUARTERS.length} quarters of Reddit data from r/${SUBREDDIT} (last 7 days)`);
+  if (isGitHubActions) {
+    console.log('📌 Running in GitHub Actions environment with extra conservative settings');
+    console.log('🔴 Rising sort has been disabled to avoid 403 errors');
+  }
   console.log('═════════════════════════════════════════════════════\n');
   
   try {
@@ -324,19 +386,15 @@ async function fetchDailyReddit(): Promise<void> {
       process.exit(1);
     }
 
-    // Create required objects - IDENTICAL to asksf-resilient-fixed.ts
+    // Create required objects
     const dbHandler = new DBHandler(supabaseUrl, supabaseKey, {
       batchSize: BATCH_SIZE,
       retryAttempts: 8,
       disableTriggers: config.database.disableTriggers || false
     });
     
-    // Create RedditFetcher with very lenient rate limiting - IDENTICAL to asksf-resilient-fixed.ts
-    const fetcher = new RedditFetcher({
-      userAgent: 'LocalGuru/1.0',
-      requestDelay: 5000, // 5 seconds between requests
-      checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT)
-    });
+    // Create RedditFetcher with appropriate auth based on environment
+    const fetcher = await createRedditFetcher();
     
     // Create change detector - IDENTICAL to asksf-resilient-fixed.ts
     const changeDetector = new ChangeDetector({
@@ -624,8 +682,9 @@ async function fetchDailyReddit(): Promise<void> {
         printProgressSummary(true);
         
         // Add a longer pause between quarters to let the system breathe
-        console.log(`\n⏳ Pausing for 60 seconds before next quarter...`);
-        await sleep(60000); // Full minute between quarters
+        // Use much longer pause in GitHub Actions
+        console.log(`\n⏳ Pausing for ${QUARTER_PAUSE/1000} seconds before next quarter...`);
+        await sleep(QUARTER_PAUSE);
         
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
