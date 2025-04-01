@@ -1,18 +1,8 @@
 /**
  * Daily Reddit Update Script
  * 
- * This script fetches data from Reddit for the past 7 days
- * with extreme resilience against network issues and database constraints.
- * Based on the proven asksf-resilient-fixed.ts script.
- * 
- * Features:
- * - Focuses only on recent (7 days) data
- * - Aggressive retry mechanisms for network failures
- * - Proper foreign key constraint handling
- * - Extensive pauses between operations
- * - Enhanced error logging and recovery
- * - Retry queue for failed comment batches
- * - Visual progress tracking
+ * This script is based directly on the proven asksf-resilient-fixed.ts script,
+ * with only the time range modified to focus on the last 7 days.
  */
 
 import dotenv from 'dotenv';
@@ -22,7 +12,6 @@ import { RedditFetcher, RedditPost, RedditComment } from '../fetchers';
 import { ChangeDetector } from '../processors';
 import { config } from '../config';
 import path from 'path';
-import { RedditAPI } from '../fetchers';
 
 // Load environment variables
 dotenv.config();
@@ -30,7 +19,7 @@ dotenv.config();
 // Create logger
 const logger = new Logger('DailyRedditUpdate');
 
-// Configuration - keeping the same values as the proven script
+// Configuration - IDENTICAL to asksf-resilient-fixed.ts
 const SUBREDDIT = 'AskSF';
 const MAX_RETRIES = 15;
 const BATCH_SIZE = 15; // Reduced from 20 for better reliability
@@ -42,7 +31,7 @@ const COMMENT_BATCH_SIZE = 3; // Very small batches for comments
 const COMMENT_BATCH_PAUSE = 5000; // 5 seconds between comment batches
 const MAX_COMMENT_RETRY_ATTEMPTS = 3; // Maximum number of retry attempts for comment batches
 
-// Comment retry queue
+// Comment retry queue - IDENTICAL to asksf-resilient-fixed.ts
 interface RetryQueueItem {
   comments: RedditComment[];
   attemptCount: number;
@@ -52,19 +41,18 @@ interface RetryQueueItem {
 
 const commentRetryQueue: RetryQueueItem[] = [];
 
-// Define quarters to fetch - ONLY MODIFICATION: focusing on just 7 days of data
+// Define quarters to fetch - ONLY CHANGE: just the last 7 days
 const QUARTERS = [
-  // Recent data (last 7 days) with all sort types - one sort type at a time for better resilience
+  // Recent data (last 7 days) with all sort types
   { name: 'Recent New', sort: 'new', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Top', sort: 'top', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Hot', sort: 'hot', limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
-  // Use type assertions for sorts not in the standard types
   { name: 'Recent Best', sort: 'best' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Controversial', sort: 'controversial' as any, limit: 500, fetchAllTime: false, maxAgeHours: 24 * 7 },
   { name: 'Recent Rising', sort: 'rising' as any, limit: 300, fetchAllTime: false, maxAgeHours: 24 * 7 }
 ] as const;
 
-// Global stats to track progress
+// Global stats to track progress - IDENTICAL to asksf-resilient-fixed.ts
 const stats = {
   startTime: new Date(),
   batchesProcessed: 0,
@@ -83,7 +71,7 @@ const stats = {
   successfulRetries: 0
 };
 
-// Format time elapsed
+// Format time elapsed - IDENTICAL to asksf-resilient-fixed.ts
 function formatTimeElapsed(startTime: Date): string {
   const elapsedMs = Date.now() - startTime.getTime();
   const seconds = Math.floor((elapsedMs / 1000) % 60);
@@ -93,14 +81,14 @@ function formatTimeElapsed(startTime: Date): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// Create a progress bar
+// Create a progress bar - IDENTICAL to asksf-resilient-fixed.ts
 function createProgressBar(progress: number, length: number = 30): string {
   const filledLength = Math.round(length * progress);
   const bar = '█'.repeat(filledLength) + '░'.repeat(length - filledLength);
   return `[${bar}] ${Math.round(progress * 100)}%`;
 }
 
-// Print progress summary
+// Print progress summary - IDENTICAL to asksf-resilient-fixed.ts
 function printProgressSummary(isQuarterComplete = false): void {
   const elapsedTime = formatTimeElapsed(stats.startTime);
   const quarterProgress = stats.currentQuarter / QUARTERS.length;
@@ -126,7 +114,7 @@ function printProgressSummary(isQuarterComplete = false): void {
   }
 }
 
-// Track API request with rate limiting
+// Track API request with rate limiting - IDENTICAL to asksf-resilient-fixed.ts
 function trackApiRequest(): void {
   const now = new Date();
   stats.apiRequests++;
@@ -138,12 +126,12 @@ function trackApiRequest(): void {
   }
 }
 
-// Sleep utility
+// Sleep utility - IDENTICAL to asksf-resilient-fixed.ts
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Add failed comment batch to retry queue
+// Add failed comment batch to retry queue - IDENTICAL to asksf-resilient-fixed.ts
 function addToRetryQueue(comments: RedditComment[], quarterName: string): void {
   commentRetryQueue.push({
     comments,
@@ -156,7 +144,7 @@ function addToRetryQueue(comments: RedditComment[], quarterName: string): void {
   console.log(`⏳ Queued ${comments.length} comments for retry (Total: ${commentRetryQueue.length})`);
 }
 
-// Process the retry queue - retry failed comment batches
+// Process the retry queue - IDENTICAL to asksf-resilient-fixed.ts
 async function processRetryQueue(dbHandler: DBHandler): Promise<void> {
   if (commentRetryQueue.length === 0) {
     return;
@@ -252,7 +240,7 @@ async function processRetryQueue(dbHandler: DBHandler): Promise<void> {
   logger.info(`Completed retry queue processing: ${successCount}/${batchesToProcess} batches successful, ${commentRetryQueue.length} remaining`);
 }
 
-// Process a quarter with retries
+// Process a quarter with retries - IDENTICAL to asksf-resilient-fixed.ts
 async function processQuarterWithRetry(
   fetcher: RedditFetcher,
   processBatchFn: (posts: RedditPost[], comments: RedditComment[]) => Promise<void>,
@@ -318,38 +306,10 @@ async function processQuarterWithRetry(
   }
 }
 
-// Additional function to verify Reddit API connectivity without OAuth
-async function verifyRedditConnectivity(userAgent: string): Promise<boolean> {
-  logger.info('Testing Reddit API connectivity...');
-  
-  try {
-    // Create a temporary RedditAPI instance for testing - using simple method without OAuth
-    const testApi = new RedditAPI({
-      userAgent,
-      requestDelay: 2000
-    });
-    
-    // Try a simple public endpoint
-    await testApi.get('/r/AskSF/about.json', {});
-    logger.info('✅ Reddit API connectivity verified successfully');
-    return true;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`❌ Reddit API connectivity test failed: ${errorMessage}`);
-    if (errorMessage.includes('403')) {
-      logger.error('Access forbidden - this may be due to Reddit rate limiting. Using proper user-agent is important.');
-      logger.error('Recommended format: script:bot_name:version (by /u/username)');
-    } else if (errorMessage.includes('429')) {
-      logger.error('Rate limit exceeded. The script will use conservative rate limiting.');
-    }
-    return false;
-  }
-}
-
-// Main function
+// Main function - IDENTICAL to asksf-resilient-fixed.ts except for the message
 async function fetchDailyReddit(): Promise<void> {
-  logger.info('Starting daily Reddit data fetch');
-  console.log('\n🚀 STARTING DAILY REDDIT DATA FETCH');
+  logger.info('Starting daily Reddit data fetch (last 7 days only)');
+  console.log('\n🚀 STARTING DAILY REDDIT UPDATE (LAST 7 DAYS)');
   console.log('═════════════════════════════════════════════════════');
   console.log(`📊 Processing ${QUARTERS.length} quarters of Reddit data from r/${SUBREDDIT} (last 7 days)`);
   console.log('═════════════════════════════════════════════════════\n');
@@ -363,48 +323,29 @@ async function fetchDailyReddit(): Promise<void> {
       logger.error('Supabase URL and key must be provided in environment variables');
       process.exit(1);
     }
-    
-    // Get Reddit API credentials
-    const redditUserAgent = process.env.REDDIT_USER_AGENT || 'script:com.localguru.redditfetcher:v1.0.0';
-    const redditClientId = process.env.REDDIT_CLIENT_ID;
-    const redditClientSecret = process.env.REDDIT_CLIENT_SECRET;
-    const redditUsername = process.env.REDDIT_USERNAME;
-    const redditPassword = process.env.REDDIT_PASSWORD;
-    
-    // Verify Reddit API connectivity before proceeding
-    const connectivityValid = await verifyRedditConnectivity(redditUserAgent);
-    if (!connectivityValid) {
-      logger.error('Reddit API connectivity failed verification. Data collection may fail with 403 errors.');
-      console.log('⚠️ WARNING: Reddit API connectivity failed verification!');
-      console.log('Continuing anyway, but expect 403 Forbidden errors...');
-    }
 
-    // Create required objects
+    // Create required objects - IDENTICAL to asksf-resilient-fixed.ts
     const dbHandler = new DBHandler(supabaseUrl, supabaseKey, {
       batchSize: BATCH_SIZE,
       retryAttempts: 8,
       disableTriggers: config.database.disableTriggers || false
     });
     
-    // Create RedditFetcher with very lenient rate limiting
+    // Create RedditFetcher with very lenient rate limiting - IDENTICAL to asksf-resilient-fixed.ts
     const fetcher = new RedditFetcher({
-      userAgent: 'LocalGuru/1.0', // Using exact same user agent as in working script
-      requestDelay: 5000, // 5 seconds between requests - same as working script
+      userAgent: 'LocalGuru/1.0',
+      requestDelay: 5000, // 5 seconds between requests
       checkpointDir: path.join(process.cwd(), 'checkpoints', SUBREDDIT)
     });
     
-    logger.info(`Reddit fetcher initialized with same configuration as proven asksf-resilient-fixed.ts script`);
-    logger.info(`Using requestDelay: 5000ms to ensure proper rate limiting`);
-    logger.info(`Checkpoint directory: ${path.join(process.cwd(), 'checkpoints', SUBREDDIT)}`);
-    
-    // Create change detector
+    // Create change detector - IDENTICAL to asksf-resilient-fixed.ts
     const changeDetector = new ChangeDetector({
       checksumFields: config.changeDetection.checksumFields || ['title', 'content', 'score'],
       ignoreFields: config.changeDetection.ignoreFields || ['last_updated'],
       forceUpdateAfterDays: config.changeDetection.forceUpdateAfterDays || 7
     });
     
-    // Define batch processor function
+    // Define batch processor function - IDENTICAL to asksf-resilient-fixed.ts
     const processBatch = async (posts: RedditPost[], comments: RedditComment[]): Promise<void> => {
       // Increment batch counter
       stats.batchesProcessed++;
@@ -683,8 +624,8 @@ async function fetchDailyReddit(): Promise<void> {
         printProgressSummary(true);
         
         // Add a longer pause between quarters to let the system breathe
-        console.log(`\n⏳ Pausing for 30 seconds before next quarter...`);
-        await sleep(30000); // 30 seconds between quarters for daily run
+        console.log(`\n⏳ Pausing for 60 seconds before next quarter...`);
+        await sleep(60000); // Full minute between quarters
         
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -709,7 +650,6 @@ async function fetchDailyReddit(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`Fatal error: ${errorMessage}`);
     console.error(`\n\n❌ FATAL ERROR: ${errorMessage.substring(0, 150)}${errorMessage.length > 150 ? '...' : ''}`);
-    process.exit(1);
   } finally {
     printProgressSummary(true);
   }
