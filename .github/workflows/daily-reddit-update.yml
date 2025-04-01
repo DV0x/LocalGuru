@@ -58,8 +58,9 @@ jobs:
           path: localguru-ingestion/logs/${{ steps.run_script.outputs.log_filename }}
           retention-days: 7
       
-      - name: Send failure notification (if needed)
-        if: failure()
+      # Only run email notification if all required email secrets are set
+      - name: Send failure notification (if email configured)
+        if: failure() && secrets.MAIL_RECIPIENT != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.MAIL_SERVER }}
