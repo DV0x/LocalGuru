@@ -21,6 +21,14 @@ jobs:
           node-version: '18'
           cache: 'npm'
       
+      - name: Verify secrets
+        run: |
+          echo "Checking if required secrets are set:"
+          echo "NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' }}"
+          echo "SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
+          echo "REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID != '' }}"
+          echo "REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME != '' }}"
+      
       - name: Verify file structure
         run: |
           echo "=== Repository structure ==="
@@ -44,9 +52,11 @@ jobs:
       
       - name: Run Reddit update script with verbose logging
         env:
-          # Supabase credentials
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # Supabase credentials - using the correct secret names
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           
           # Reddit API credentials
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
@@ -68,12 +78,34 @@ jobs:
           echo "NPM version: $(npm -v)" >> $LOG_FILE
           echo "Working directory: $(pwd)" >> $LOG_FILE
           echo "Script path exists: $(test -f src/scripts/daily-reddit-update.ts && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          
+          # Check if env vars are set (without revealing values)
+          echo "SUPABASE_URL set: $(test -n "$SUPABASE_URL" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "NEXT_PUBLIC_SUPABASE_URL set: $(test -n "$NEXT_PUBLIC_SUPABASE_URL" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "SUPABASE_SERVICE_ROLE_KEY set: $(test -n "$SUPABASE_SERVICE_ROLE_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY set: $(test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "Reddit credentials set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          
           echo "=== Starting script execution ===" >> $LOG_FILE
+          
+          # Create temporary .env file to ensure env vars are loaded
+          echo "# Temporary .env file for GitHub Actions" > .env
+          echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL" >> .env
+          echo "SUPABASE_URL=$SUPABASE_URL" >> .env
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY" >> .env
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env
+          echo "REDDIT_CLIENT_ID=$REDDIT_CLIENT_ID" >> .env
+          echo "REDDIT_CLIENT_SECRET=$REDDIT_CLIENT_SECRET" >> .env
+          echo "REDDIT_USERNAME=$REDDIT_USERNAME" >> .env
+          echo "REDDIT_PASSWORD=$REDDIT_PASSWORD" >> .env
+          echo "REDDIT_USER_AGENT=$REDDIT_USER_AGENT" >> .env
           
           # Run with more verbose output
           npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
           EXIT_CODE=$?
+          
+          # Clean up temporary .env file
+          rm .env
           
           echo "========== Finished at $(date) with exit code $EXIT_CODE ==========" >> $LOG_FILE
           
