@@ -1,0 +1,24 @@
+{
+  "name": "embedding-queue-processor",
+  "version": "1.0.0",
+  "description": "Script to process embedding queue records in batches",
+  "main": "process-all-queue.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm process-all-queue.ts",
+    "build": "tsc",
+    "process": "node dist/process-all-queue.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.4",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.2"
+  }
+}
