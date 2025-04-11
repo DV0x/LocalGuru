@@ -16,6 +16,7 @@ import { RedditFetcher, RedditPost, RedditComment, RedditAPI } from '../fetchers
 import { ChangeDetector } from '../processors';
 import { config } from '../config';
 import path from 'path';
+import fs from 'fs';
 
 // Load environment variables
 dotenv.config();
@@ -69,6 +70,16 @@ let QUARTERS = [
 if (!isGitHubActions) {
   QUARTERS.push({ name: 'Recent Rising', sort: 'rising' as any, limit: 300, fetchAllTime: false, maxAgeHours: 24 * 7 });
 }
+
+// Process command-line arguments for additional options
+const args = process.argv.slice(2).reduce((acc, arg) => {
+  const [key, value] = arg.replace('--', '').split('=');
+  acc[key] = value || 'true';
+  return acc;
+}, {} as Record<string, string>);
+
+// Option to force fresh fetch regardless of checkpoint age
+const FORCE_FRESH = args.forceFresh === 'true';
 
 // Global stats to track progress - IDENTICAL to asksf-resilient-fixed.ts
 const stats = {
@@ -328,6 +339,29 @@ async function processQuarterWithRetry(
 async function createRedditFetcher(): Promise<RedditFetcher> {
   const checkpointDir = path.join(process.cwd(), 'checkpoints', SUBREDDIT);
   
+  // Ensure the checkpoint directory exists
+  if (!fs.existsSync(checkpointDir)) {
+    fs.mkdirSync(checkpointDir, { recursive: true });
+  }
+  
+  // If forcing fresh fetch, clean up old checkpoints first
+  if (FORCE_FRESH) {
+    logger.info('Force fresh fetch requested - clearing all checkpoint files');
+    console.log('🔄 Force fresh fetch requested - clearing checkpoints for fresh data');
+    
+    try {
+      const files = fs.readdirSync(checkpointDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          fs.unlinkSync(path.join(checkpointDir, file));
+        }
+      }
+      logger.info(`Cleared ${files.length} checkpoint files from ${checkpointDir}`);
+    } catch (err) {
+      logger.warn(`Error clearing checkpoints: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  
   // If running in GitHub Actions, try to use OAuth authentication if credentials available
   if (isGitHubActions && 
       process.env.REDDIT_CLIENT_ID && 
@@ -367,14 +401,23 @@ async function createRedditFetcher(): Promise<RedditFetcher> {
 // Main function - IDENTICAL to asksf-resilient-fixed.ts except for the message
 async function fetchDailyReddit(): Promise<void> {
   logger.info(`Starting daily Reddit data fetch (last 7 days only) - ${isGitHubActions ? 'GitHub Actions' : 'Local'} environment`);
+  
   console.log('\n🚀 STARTING DAILY REDDIT UPDATE (LAST 7 DAYS)');
   console.log('═════════════════════════════════════════════════════');
   console.log(`📊 Processing ${QUARTERS.length} quarters of Reddit data from r/${SUBREDDIT} (last 7 days)`);
+  
   if (isGitHubActions) {
     console.log('📌 Running in GitHub Actions environment with extra conservative settings');
     console.log('🔴 Rising sort has been disabled to avoid 403 errors');
   }
-  console.log('═════════════════════════════════════════════════════\n');
+  
+  if (FORCE_FRESH) {
+    console.log('🔄 Force fresh fetch enabled - ignoring all checkpoints');
+  } else {
+    console.log('📝 Using checkpoint expiration (24h) - automatic fresh fetch daily');
+  }
+  
+  console.log('═════════════════════════════════════════════════════');
   
   try {
     // Initialize Supabase client parameters

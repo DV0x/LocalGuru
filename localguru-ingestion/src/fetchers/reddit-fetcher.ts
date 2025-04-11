@@ -214,7 +214,17 @@ export class RedditFetcher {
       const content = fs.readFileSync(filepath, 'utf-8');
       const checkpoint = JSON.parse(content) as FetchCheckpoint;
       
-      this.logger.info(`Found checkpoint for ${subreddit} (${checkpoint.fetchedCount}/${checkpoint.maxPosts} posts)`);
+      // Check if checkpoint is older than 24 hours (86400000 ms)
+      const checkpointTimestamp = new Date(checkpoint.timestamp).getTime();
+      const now = Date.now();
+      const checkpointAgeHours = (now - checkpointTimestamp) / (1000 * 60 * 60);
+      
+      if (checkpointAgeHours > 24) {
+        this.logger.info(`Found checkpoint for ${subreddit} but it's ${Math.round(checkpointAgeHours)} hours old (>24h). Ignoring for fresh data fetch.`);
+        return null;
+      }
+      
+      this.logger.info(`Found checkpoint for ${subreddit} (${checkpoint.fetchedCount}/${checkpoint.maxPosts} posts, ${Math.round(checkpointAgeHours)} hours old)`);
       return checkpoint;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));

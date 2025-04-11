@@ -6,6 +6,11 @@ on:
     - cron: '30 4 * * *'
   # Allow manual triggering for testing
   workflow_dispatch:
+    inputs:
+      force_fresh:
+        description: 'Force fresh fetch ignoring checkpoints'
+        type: boolean
+        default: false
 
 jobs:
   update-reddit-data:
@@ -41,6 +46,18 @@ jobs:
           cd localguru-ingestion
           mkdir -p logs
       
+      - name: Determine if weekly force refresh is needed
+        id: check_day
+        run: |
+          # Force full refresh on Sundays (day 0) or if manually requested
+          if [[ $(date +%w) -eq 0 ]] || [[ "${{ github.event.inputs.force_fresh }}" == "true" ]]; then
+            echo "force_fresh=true" >> $GITHUB_OUTPUT
+            echo "Today is Sunday or force_fresh was requested - will perform full data refresh"
+          else
+            echo "force_fresh=false" >> $GITHUB_OUTPUT
+            echo "Regular daily update - using 24h checkpoint expiration"
+          fi
+      
       - name: Run daily Reddit data collection with automatic retry
         env:
           # Supabase credentials - using the correct secret names
@@ -48,6 +65,12 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          
+          # Reddit API credentials if available
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           
           # Development mode for verbose logging
           NODE_ENV: "development"
@@ -62,6 +85,7 @@ jobs:
           echo "NPM version: $(npm -v)" >> $LOG_FILE
           echo "Working directory: $(pwd)" >> $LOG_FILE
           echo "Script path exists: $(test -f src/scripts/daily-reddit-update.ts && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "Force fresh: ${{ steps.check_day.outputs.force_fresh }}" >> $LOG_FILE
           
           # More detailed credential checks - while keeping secrets secure
           echo "=== Credential checks (without showing values) ===" >> $LOG_FILE
@@ -69,6 +93,10 @@ jobs:
           echo "NEXT_PUBLIC_SUPABASE_URL set: $(test -n "$NEXT_PUBLIC_SUPABASE_URL" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "SUPABASE_SERVICE_ROLE_KEY set: $(test -n "$SUPABASE_SERVICE_ROLE_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY set: $(test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_CLIENT_ID set: $(test -n "$REDDIT_CLIENT_ID" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_CLIENT_SECRET set: $(test -n "$REDDIT_CLIENT_SECRET" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_USERNAME set: $(test -n "$REDDIT_USERNAME" && echo 'Yes' || echo 'No')" >> $LOG_FILE
+          echo "REDDIT_PASSWORD set: $(test -n "$REDDIT_PASSWORD" && echo 'Yes' || echo 'No')" >> $LOG_FILE
           
           echo "=== Starting script execution ===" >> $LOG_FILE
           
@@ -79,17 +107,34 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY" >> .env
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env
           
+          # Add Reddit credentials if available
+          if [ -n "$REDDIT_CLIENT_ID" ]; then
+            echo "REDDIT_CLIENT_ID=$REDDIT_CLIENT_ID" >> .env
+            echo "REDDIT_CLIENT_SECRET=$REDDIT_CLIENT_SECRET" >> .env
+            echo "REDDIT_USERNAME=$REDDIT_USERNAME" >> .env
+            echo "REDDIT_PASSWORD=$REDDIT_PASSWORD" >> .env
+          fi
+          
           # Set max retries for the whole script
           MAX_SCRIPT_RETRIES=3
           CURRENT_RETRY=0
           FINAL_EXIT_CODE=0
           
+          # Build force fetch parameter if needed
+          FORCE_PARAM=""
+          if [[ "${{ steps.check_day.outputs.force_fresh }}" == "true" ]]; then
+            FORCE_PARAM="--forceFresh=true"
+            echo "Running with force fresh parameter to ignore checkpoints" >> $LOG_FILE
+          else
+            echo "Running with normal 24-hour checkpoint expiration" >> $LOG_FILE
+          fi
+          
           # Run with automatic retry for temporary Reddit API issues
           while [ $CURRENT_RETRY -lt $MAX_SCRIPT_RETRIES ]; do
             echo "Attempt $(($CURRENT_RETRY + 1))/$MAX_SCRIPT_RETRIES to run Reddit update" >> $LOG_FILE
             
-            # Run the script
-            npx ts-node --transpile-only src/scripts/daily-reddit-update.ts >> $LOG_FILE 2>&1
+            # Run the script with appropriate parameters
+            npx ts-node --transpile-only src/scripts/daily-reddit-update.ts $FORCE_PARAM >> $LOG_FILE 2>&1
             EXIT_CODE=$?
             
             # Check for 403 errors
@@ -118,6 +163,16 @@ jobs:
             echo "WARNING: Script completed but encountered 403 errors!" >> $LOG_FILE
             echo "This may be due to Reddit rate limiting. The script uses simple user agent authentication" >> $LOG_FILE
             echo "based on the same configuration as the proven working script." >> $LOG_FILE
+          fi
+          
+          # Check if data was actually fetched
+          if grep -q "totalPosts: 0, totalComments: 0" $LOG_FILE && grep -q "posts, 0 comments" $LOG_FILE; then
+            echo "WARNING: No data was fetched in this run! Check checkpoint expiration." >> $LOG_FILE
+            # Don't mark as failure if using checkpoint expiration normally
+            if [[ "${{ steps.check_day.outputs.force_fresh }}" == "true" ]]; then
+              echo "ERROR: Force fresh was enabled but no data was fetched!" >> $LOG_FILE
+              FINAL_EXIT_CODE=1
+            fi
           fi
           
           # Clean up temporary .env file
