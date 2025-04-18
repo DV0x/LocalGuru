@@ -3,6 +3,16 @@
 import { FC, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { createPortal } from 'react-dom';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { dark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+
+// Type for code component props
+interface CodeProps extends React.HTMLAttributes<HTMLElement> {
+  node?: any;
+  inline?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}
 
 interface SearchResult {
   id: string;
@@ -149,82 +159,56 @@ export function MarkdownRenderer({
       <ReactMarkdown
         components={{
           h1: ({ node, ...props }) => (
-            <h1 {...props} className="text-2xl font-bold text-zinc-100 mb-6" />
+            <h1 {...props} className="text-2xl font-bold text-black mb-6" />
           ),
           h2: ({ node, ...props }) => (
-            <h2 {...props} className="text-xl font-bold text-zinc-100 mt-8 mb-4" />
+            <h2 {...props} className="text-xl font-bold text-black mt-8 mb-4" />
           ),
           h3: ({ node, ...props }) => (
-            <h3 {...props} className="text-lg font-semibold text-zinc-100 mt-6 mb-3" />
+            <h3 {...props} className="text-lg font-semibold text-black mt-6 mb-3" />
           ),
           p: ({ node, ...props }) => (
-            <p {...props} className="text-zinc-200 mb-5 leading-relaxed" />
+            <p {...props} className="text-black mb-5 leading-relaxed" />
           ),
           ul: ({ node, ...props }) => (
-            <ul {...props} className="list-disc pl-5 mb-5 text-zinc-200 space-y-2" />
+            <ul {...props} className="list-disc pl-5 mb-5 text-black space-y-2" />
           ),
           ol: ({ node, ...props }) => (
-            <ol {...props} className="list-decimal pl-5 mb-5 text-zinc-200 space-y-2" />
+            <ol {...props} className="list-decimal pl-5 mb-5 text-black space-y-2" />
           ),
           li: ({ node, ...props }) => (
-            <li {...props} className="mb-2 text-zinc-200" />
+            <li {...props} className="mb-2 text-black" />
           ),
           blockquote: ({ node, ...props }) => (
-            <blockquote {...props} className="border-l-4 border-indigo-500 pl-4 italic my-4 text-zinc-300" />
+            <blockquote {...props} className="border-l-4 border-indigo-500 pl-4 italic my-4 text-black" />
           ),
           a: ({ node, ...props }) => {
-            if (props.href?.startsWith('#ref-')) {
-              const refNumber = props.href.replace('#ref-', '');
-              const uniqueId = `citation-${refNumber}-${citationCounter++}`;
-              
-              return (
-                <span className="citation-wrapper relative inline-block">
-                  <a
-                    {...props}
-                    className="text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
-                    data-citation-id={uniqueId}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (activeCitationId === uniqueId) {
-                        setActiveCitationId(null);
-                        setActiveReference(null);
-                        setTooltipPosition(null);
-                      } else {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setActiveCitationId(uniqueId);
-                        setActiveReference(refNumber);
-                        setTooltipPosition({
-                          top: rect.bottom + window.scrollY,
-                          left: rect.left + rect.width / 2 + window.scrollX
-                        });
-                      }
-                    }}
-                    onMouseEnter={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setActiveCitationId(uniqueId);
-                      setActiveReference(refNumber);
-                      setTooltipPosition({
-                        top: rect.bottom + window.scrollY,
-                        left: rect.left + rect.width / 2 + window.scrollX
-                      });
-                    }}
-                    onMouseLeave={(e) => {
-                      setTimeout(() => {
-                        const tooltipEl = document.querySelector('.citation-tooltip[data-hovered="true"]');
-                        if (!tooltipEl) {
-                          setActiveCitationId(null);
-                          setActiveReference(null);
-                          setTooltipPosition(null);
-                        }
-                      }, 200);
-                    }}
-                  >
-                    [{props.children}]
-                  </a>
-                </span>
-              );
-            }
-            return <a {...props} className="text-indigo-400 hover:text-indigo-300 hover:underline transition-colors" target="_blank" rel="noopener noreferrer" />;
+            return (
+              <a
+                {...props}
+                className="font-medium text-indigo-600 hover:text-indigo-800 underline"
+              />
+            );
+          },
+          code: ({ node, inline, className, children, ...props }: any) => {
+            const match = /language-(\w+)/.exec(className || "");
+            return !inline ? (
+              <SyntaxHighlighter
+                {...props}
+                PreTag="div"
+                children={String(children).replace(/\n$/, "")}
+                language={match ? match[1] : "javascript"}
+                style={dark}
+                className="rounded-md"
+              />
+            ) : (
+              <code
+                {...props}
+                className="bg-gray-100 rounded px-1 py-0.5 text-gray-800 font-mono text-sm"
+              >
+                {children}
+              </code>
+            );
           }
         }}
       >
@@ -244,18 +228,18 @@ export function MarkdownRenderer({
         }
         
         .markdown-renderer strong {
-          color: #e4e4e7;
+          color: #000000;
           font-weight: 600;
         }
         
         .markdown-renderer a {
-          color: #a5b4fc;
+          color: #4f46e5;
           text-decoration: none;
           transition: color 0.2s ease;
         }
         
         .markdown-renderer a:hover {
-          color: #818cf8;
+          color: #4338ca;
           text-decoration: underline;
         }
         
