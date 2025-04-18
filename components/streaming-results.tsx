@@ -1,9 +1,9 @@
 "use client";
 
-import { FC, useEffect } from 'react';
+import { useEffect } from 'react';
 import { MarkdownRenderer } from './markdown-renderer';
 import { StreamingStatus } from '@/app/lib/search/streaming-types';
-import { ExternalLink, Check, AlertTriangle, Sparkles, Search, Book } from 'lucide-react';
+import { Check, AlertTriangle, Sparkles } from 'lucide-react';
 
 interface SearchResult {
   id: string;
@@ -31,19 +31,19 @@ export function StreamingResults({
   status,
   statusMessage
 }: StreamingResultsProps) {
+  // Add console log to debug search results
+  useEffect(() => {
+    console.log('Streaming Results - searchResults length:', searchResults?.length);
+    console.log('Streaming Results - searchResults:', searchResults);
+  }, [searchResults]);
+  
   // Render status indicators based on current status
   const renderStatusIndicator = () => {
     if (status === 'initializing' || status === 'searching') {
       return (
         <div className="flex flex-col items-center justify-center py-10">
-          <div className="relative w-16 h-16 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-4 border-zinc-700 opacity-20"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
-            <Search className="h-6 w-6 text-indigo-400" />
-          </div>
-          <p className="text-zinc-300 mt-4 font-medium">
-            {statusMessage || 'Searching for results...'}
-          </p>
+          <div className="inline-block h-12 w-12 border-4 border-black border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="font-bold">{statusMessage || "Searching for local gems..."}</p>
         </div>
       );
     }
@@ -51,32 +51,26 @@ export function StreamingResults({
     if (status === 'search_complete') {
       return (
         <div className="flex flex-col items-center justify-center py-10">
-          <div className="flex items-center justify-center h-16 w-16 rounded-full bg-zinc-700 shadow-lg">
-            <Check className="h-8 w-8 text-emerald-400" />
+          <div className="flex items-center justify-center h-16 w-16 rounded-full bg-[rgb(var(--accent))] mb-4">
+            <Check className="h-8 w-8 text-white" />
           </div>
-          <p className="text-zinc-300 mt-4 font-medium">
-            {statusMessage || `Found ${searchResults.length} results`}
-          </p>
-          <p className="text-zinc-400 text-sm mt-2">
-            Generating insights...
-          </p>
+          <p className="font-bold">{statusMessage || `Found ${searchResults.length} results`}</p>
+          <p className="text-gray-600 text-sm mt-2">Generating insights...</p>
         </div>
       );
     }
     
     if (status === 'generating') {
       return (
-        <div className="flex flex-col items-center justify-center py-4 mb-4 bg-zinc-700/50 rounded-lg">
-          <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-900/50 mb-3">
-            <Sparkles className="h-5 w-5 text-indigo-400" />
+        <div className="flex flex-col items-center justify-center py-4 mb-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-center h-10 w-10 rounded-full bg-[rgb(var(--primary))] mb-3">
+            <Sparkles className="h-5 w-5 text-white" />
           </div>
-          <p className="text-indigo-300 font-medium">
-            AI is synthesizing insights...
-          </p>
+          <p className="font-bold text-[rgb(var(--primary))]">AI is synthesizing insights...</p>
           <div className="flex space-x-2 mt-3">
-            <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse delay-100"></div>
-            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse delay-300"></div>
-            <div className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse delay-500"></div>
+            <div className="w-2 h-2 bg-[rgb(var(--primary))] rounded-full animate-pulse delay-100"></div>
+            <div className="w-2 h-2 bg-[rgb(var(--accent))] rounded-full animate-pulse delay-300"></div>
+            <div className="w-2 h-2 bg-[rgb(var(--secondary))] rounded-full animate-pulse delay-500"></div>
           </div>
         </div>
       );
@@ -84,9 +78,9 @@ export function StreamingResults({
     
     if (status === 'error') {
       return (
-        <div className="flex flex-col items-center justify-center py-10 bg-red-900/20 rounded-lg">
-          <AlertTriangle className="h-12 w-12 mb-2 text-red-400" />
-          <p className="text-red-300 font-medium">{statusMessage || 'Something went wrong'}</p>
+        <div className="flex flex-col items-center justify-center py-10 bg-red-50 rounded-lg">
+          <AlertTriangle className="h-12 w-12 mb-2 text-red-500" />
+          <p className="font-bold text-red-500">{statusMessage || "Something went wrong"}</p>
         </div>
       );
     }
@@ -95,28 +89,30 @@ export function StreamingResults({
   };
   
   return (
-    <div className="w-full mt-8 max-w-3xl mx-auto px-4">
-      <div className="rounded-2xl border border-zinc-700 bg-zinc-800/90 shadow-xl overflow-hidden backdrop-blur-sm">
+    <div className="w-full mt-8 max-w-3xl mx-auto mb-8">
+      <div className="neo-card p-6">
         {content ? (
           <>
-            {status === 'generating' && (
-              <div className="border-b border-zinc-700">
-                {renderStatusIndicator()}
+            {status === 'generating' && <div className="border-b border-gray-200 mb-6">{renderStatusIndicator()}</div>}
+            {searchResults.length === 0 && status === 'generating' && (
+              <div className="px-4 pt-2 pb-4">
+                <div className="flex items-center mb-4 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                  <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+                  <p className="text-sm text-amber-800">
+                    No specific matches found in our database. Generating a response based on general knowledge.
+                  </p>
+                </div>
               </div>
             )}
-            <div className="p-10">
-              <div className="prose prose-invert prose-headings:text-zinc-100 prose-p:text-zinc-200 prose-strong:text-zinc-100 prose-li:text-zinc-200 max-w-none">
-                <MarkdownRenderer 
-                  content={content}
-                  searchResults={searchResults}
-                />
-              </div>
+            <div className="prose prose-lg max-w-none text-black">
+              <MarkdownRenderer 
+                content={content}
+                searchResults={searchResults}
+              />
             </div>
           </>
         ) : (
-          <div className="p-8">
-            {renderStatusIndicator()}
-          </div>
+          <div>{renderStatusIndicator()}</div>
         )}
       </div>
     </div>

@@ -1,0 +1,40 @@
+{
+  "name": "embedding-processor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts",
+    "cli": "ts-node src/cli.ts",
+    "process-queue": "ts-node src/cli.ts process-queue",
+    "process-item": "ts-node src/cli.ts process-item",
+    "test-embedding": "ts-node src/test-embedding.ts",
+    "test-entity": "ts-node src/test-entity-extraction.ts",
+    "test-thread": "ts-node src/test-thread-context.ts",
+    "test-process-item": "ts-node src/test-process-item.ts",
+    "test-all": "npm run test-embedding && npm run test-entity && npm run test-thread",
+    "setup-db": "ts-node src/create-db-functions.ts",
+    "populate-queue": "ts-node src/cli.ts populate-queue",
+    "clear-queue": "ts-node src/cli.ts clear-queue",
+    "start-processors": "ts-node scripts/start-processors.ts",
+    "reset-incomplete": "ts-node reset-incomplete-records.ts",
+    "fix-queue": "ts-node fix-queue-issues.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.4.7",
+    "openai": "^4.91.1",
+    "pg": "^8.14.1",
+    "pg-format": "^1.0.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/pg": "^8.11.11"
+  }
+}

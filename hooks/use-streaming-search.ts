@@ -40,7 +40,7 @@ export function useStreamingSearch(initialQuery = '') {
     try {
       // Default options
       const defaultOptions = {
-        maxResults: 10,
+        maxResults: 20,
         includeAnalysis: true,
         skipCache: false,
         promptVersion: 'default'
@@ -82,9 +82,13 @@ export function useStreamingSearch(initialQuery = '') {
           if (line.startsWith('METADATA:')) {
             const metadataJson = line.substring(9);
             try {
+              console.log('Received metadata string:', metadataJson.substring(0, 100) + '...');
               const parsedMetadata = JSON.parse(metadataJson);
+              console.log('Parsed metadata:', parsedMetadata);
+              console.log('Search results in metadata:', parsedMetadata.searchResults?.length || 0);
               setMetadata(parsedMetadata);
               setSearchResults(parsedMetadata.searchResults || []);
+              console.log('Set searchResults state to:', parsedMetadata.searchResults?.length || 0, 'items');
             } catch (e) {
               console.error('Error parsing metadata:', e);
             }

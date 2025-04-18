@@ -1,4 +1,5 @@
 import { SearchResult } from '@/app/lib/supabase/types';
+import { CommentSearchResult } from '@/app/lib/search/query-processor';
 
 /**
  * Format search results for LLM consumption.
@@ -11,7 +12,7 @@ import { SearchResult } from '@/app/lib/supabase/types';
  * @returns Formatted string for LLM input
  */
 export function formatSearchResultsForLLM(
-  results: SearchResult[],
+  results: SearchResult[] | CommentSearchResult[],
   query: string
 ): string {
   return `
@@ -29,9 +30,10 @@ Created: ${formatDate(result.created_at)}
 Similarity: ${result.similarity ? Math.round(result.similarity * 100) / 100 : 'N/A'}
 ${result.metadata ? `Topics: ${JSON.stringify(result.metadata.topics || [])}` : ''}
 ${result.metadata ? `Locations: ${JSON.stringify(result.metadata.locations || [])}` : ''}
+${result.metadata?.thread_context?.postTitle ? `Original Post Title: ${result.metadata.thread_context.postTitle}` : ''}
 `).join('\n')}
 
-Based on these search results, provide a comprehensive answer to the query.
+Based on these search results, provide a comprehensive answer to the query: "${query}"
 Use citations like [1], [2], etc. to reference specific results.
 `;
 }
@@ -46,7 +48,10 @@ Use citations like [1], [2], etc. to reference specific results.
  * @param index The index of this result (for citations)
  * @returns Client-formatted result object
  */
-export function formatResultForClient(result: SearchResult, index: number) {
+export function formatResultForClient(
+  result: SearchResult | CommentSearchResult, 
+  index: number
+) {
   return {
     id: result.id,
     title: result.title,
@@ -55,7 +60,10 @@ export function formatResultForClient(result: SearchResult, index: number) {
     subreddit: result.subreddit,
     author: result.author,
     created_at: result.created_at,
-    index: index + 1 // For citation referencing (1-based indexing)
+    index: index + 1, // For citation referencing (1-based indexing)
+    // Include post context for comments
+    postTitle: result.metadata?.thread_context?.postTitle || null,
+    contentType: result.content_type || 'post'
   };
 }
 
@@ -65,7 +73,9 @@ export function formatResultForClient(result: SearchResult, index: number) {
  * @param results Array of search results from the database
  * @returns Array of client-formatted results
  */
-export function formatResultsForClient(results: SearchResult[]) {
+export function formatResultsForClient(
+  results: SearchResult[] | CommentSearchResult[]
+) {
   return results.map((result, index) => formatResultForClient(result, index));
 }
 

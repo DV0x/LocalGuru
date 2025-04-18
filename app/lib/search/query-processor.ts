@@ -3,11 +3,48 @@ import { QueryAnalysisResult, EmbeddingResult, SearchResult } from '../supabase/
 import { ApiError } from '../utils/error-handling';
 import { SearchOptions } from './types';
 
+// Define CommentSearchResult type that matches SearchResult structure
+export interface CommentSearchResult {
+  id: string;
+  title: string;           // Will be populated from post_title
+  content: string;         // Will be populated from comment_content
+  content_snippet: string; // Will be populated from comment_snippet
+  url: string;             // Empty or constructed from post_id
+  subreddit: string;
+  author: string;
+  content_type: string;    // Always 'comment'
+  created_at: string;
+  similarity: number;
+  match_type: string;
+  metadata: {
+    topics?: string[];
+    locations?: string[];
+    entities?: Record<string, string[]>;
+    type?: string;
+    length?: number;
+    semanticTags?: string[];
+    tokenEstimate?: number;
+    thread_context?: {
+      path?: string[];
+      depth?: number;
+      postId?: string;
+      parentId?: string;
+      postTitle?: string;
+      subreddit?: string;
+      parentComments?: string[];
+      original_comment_content?: string; // Store original comment content
+      original_post_title?: string;      // Store original post title
+    };
+    search_fallback?: boolean;
+  };
+  permalink?: string;
+}
+
 // Simple in-memory cache for search results
 // In production, consider using Redis or a similar distributed cache
 type CacheEntry = {
   timestamp: number;
-  results: SearchResult[];
+  results: CommentSearchResult[];
   analysis: QueryAnalysisResult;
 };
 
@@ -19,7 +56,7 @@ const MAX_CACHE_SIZE = 100; // Maximum number of entries to prevent memory leaks
  * Creates a cache key from search options
  */
 function createCacheKey(options: SearchOptions): string {
-  return `${options.query.toLowerCase()}_${options.maxResults || 20}_${options.similarityThreshold || 0.6}`;
+  return `${options.query.toLowerCase()}_${options.maxResults || 20}_${options.similarityThreshold || 0.6}_${options.vectorWeight || 0.7}_${options.textWeight || 0.3}_${options.efSearch || 100}`;
 }
 
 /**
@@ -45,6 +82,22 @@ function cleanupCache(): void {
       SEARCH_CACHE.delete(key);
     }
   }
+}
+
+// Interface for raw comment search database result
+interface CommentSearchDatabaseResult {
+  id: string;
+  comment_content: string;
+  comment_snippet: string;
+  post_title: string;
+  post_id: string;
+  subreddit: string;
+  author: string;
+  created_at: string;
+  similarity: number;
+  match_type: string;
+  metadata: Record<string, any>;
+  timed_out: boolean;
 }
 
 /**
@@ -106,47 +159,159 @@ export async function generateEmbeddings(query: string): Promise<EmbeddingResult
 }
 
 /**
- * Executes the multi-strategy search with the given parameters
- * @param query The original search query
- * @param queryEmbedding The embedding vector for the query
- * @param queryIntent The detected intent of the query
- * @param queryTopics The detected topics in the query
- * @param queryLocations The detected locations in the query
- * @param maxResults Maximum number of results to return
- * @param matchThreshold Similarity threshold for matching
- * @returns Array of search results
+ * Generates embeddings with a direct API call fallback if the edge function fails
+ * This provides resilience against edge function outages
+ */
+export async function generateEmbeddingsWithFallback(query: string): Promise<EmbeddingResult> {
+  try {
+    // Try the edge function first
+    return await generateEmbeddings(query);
+  } catch (error) {
+    console.warn("Edge function embedding generation failed, using fallback:", error);
+    
+    // Check if we have an OpenAI API key for direct fallback
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      console.error("No OpenAI API key available for fallback embedding generation");
+      throw new ApiError('Embedding generation failed and no fallback available', 500);
+    }
+    
+    try {
+      // Fall back to direct embedding API call
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: query,
+          model: "text-embedding-3-large",
+          dimensions: 512,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.data || !data.data[0] || !data.data[0].embedding) {
+        throw new Error("Invalid response from OpenAI API");
+      }
+      
+      // Return the embedding in the expected format
+      return {
+        query,
+        embedding: data.data[0].embedding,
+        cached: false,
+      };
+    } catch (fallbackError: unknown) {
+      console.error("Fallback embedding generation also failed:", fallbackError);
+      throw new ApiError(`All embedding generation methods failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`, 500);
+    }
+  }
+}
+
+/**
+ * Executes comment-only search with timeout handling
  */
 export async function executeSearch(
   query: string,
-  queryEmbedding: number[],
-  queryIntent: string,
-  queryTopics: string[],
-  queryLocations: string[],
+  queryEmbedding: number[] | null,
+  queryIntent: string = 'general',
+  queryTopics: string[] | null = null,
+  queryLocations: string[] | null = null,
   maxResults: number = 20,
-  matchThreshold: number = 0.6
-): Promise<SearchResult[]> {
+  matchThreshold: number = 0.6,
+  vectorWeight: number = 0.7,
+  textWeight: number = 0.3,
+  efSearch: number = 200
+): Promise<CommentSearchResult[]> {
   try {
-    const { data, error } = await supabaseAdmin.rpc('multi_strategy_search', {
+    console.log('Executing comment-only search with parameters:', {
+      query,
+      embeddingLength: queryEmbedding?.length || 0,
+      intent: queryIntent,
+      topics: queryTopics,
+      locations: queryLocations,
+      maxResults,
+      matchThreshold,
+      vectorWeight,
+      textWeight,
+      efSearch
+    });
+    
+    const startTime = Date.now();
+    
+    // Call the timeout-resilient comment search function
+    const { data, error } = await supabaseAdmin.rpc('comment_only_search_with_timeout', {
       p_query: query,
       p_query_embedding: queryEmbedding,
       p_query_intent: queryIntent,
       p_query_topics: queryTopics || [],
       p_query_locations: queryLocations || [],
       p_max_results: maxResults,
-      p_match_threshold: matchThreshold
+      p_match_threshold: matchThreshold,
+      p_vector_weight: vectorWeight,
+      p_text_weight: textWeight,
+      p_ef_search: efSearch,
+      p_timeout_ms: 9000 // 9 second timeout
     });
     
+    const endTime = Date.now();
+    
     if (error) {
-      throw new ApiError(`Search execution failed: ${error.message}`, 500);
+      console.error('Comment search error:', error);
+      throw new ApiError(`Comment search execution failed: ${error.message}`, 500);
+    }
+
+    // Check if search timed out and fell back to text search
+    const timedOut = data?.some((item: CommentSearchDatabaseResult) => item.timed_out);
+    if (timedOut) {
+      console.log(`Comment search timed out and fell back to text search. Completed in ${endTime - startTime}ms for query "${query}" with ${data?.length || 0} results`);
+    } else {
+      console.log(`Comment search completed in ${endTime - startTime}ms for query "${query}" with ${data?.length || 0} results`);
     }
     
-    return data || [];
+    // Transform the raw comment results to match SearchResult format
+    const formattedResults = data?.map((item: CommentSearchDatabaseResult) => {
+      return {
+        id: item.id,
+        title: item.post_title || '', // Use post title as the title
+        content: item.comment_content || '',
+        content_snippet: item.comment_snippet || '',
+        url: item.post_id ? `https://reddit.com/comments/${item.post_id}` : '',
+        subreddit: item.subreddit || '',
+        author: item.author || '',
+        content_type: 'comment', // Always 'comment' for these results
+        created_at: item.created_at || '',
+        similarity: item.similarity || 0,
+        match_type: item.match_type || '',
+        metadata: {
+          ...(item.metadata || {}),
+          thread_context: {
+            ...(item.metadata?.thread_context || {}),
+            original_comment_content: item.comment_content, // Store original comment content
+            original_post_title: item.post_title,           // Store original post title
+            postId: item.post_id,
+            postTitle: item.post_title
+          },
+          search_fallback: item.timed_out || false // Indicate if this result came from fallback search
+        }
+      } as CommentSearchResult;
+    }) || [];
+    
+    return formattedResults;
   } catch (error) {
-    console.error('Error executing search:', error);
+    console.error('Error executing comment search:', error);
     if (error instanceof ApiError) {
       throw error;
     }
-    throw new ApiError('Failed to execute search', 500);
+    
+    throw new ApiError(`Failed to execute comment search: ${(error as Error).message}`, 500);
   }
 }
 
@@ -164,7 +329,10 @@ export async function performFullSearch(options: SearchOptions) {
     subreddits = [],
     useMetadataBoost = true,
     useFallback = true,
-    skipCache = false
+    skipCache = false,
+    vectorWeight = 0.7,
+    textWeight = 0.3,
+    efSearch = 200
   } = options;
 
   // Check cache first if not explicitly skipped
@@ -177,46 +345,102 @@ export async function performFullSearch(options: SearchOptions) {
       return {
         results: cachedResult.results,
         analysis: includeAnalysis ? cachedResult.analysis : undefined,
-        query,
+        query, // Always include the original query
         cached: true
       };
     }
   }
 
-  // Start both analysis and embedding generation concurrently
-  const [analysis, embeddingResult] = await Promise.all([
-    analyzeQuery(query),
-    generateEmbeddings(query)
-  ]);
-  
-  // Step 3: Execute search with the analysis and embeddings
-  const searchResults = await executeSearch(
-    query,
-    embeddingResult.embedding,
-    analysis.intent,
-    analysis.topics,
-    analysis.locations,
-    maxResults,
-    similarityThreshold
-  );
-  
-  // Store in cache
-  const cacheKey = createCacheKey(options);
-  SEARCH_CACHE.set(cacheKey, {
-    timestamp: Date.now(),
-    results: searchResults,
-    analysis
+  // Create a timeout promise that returns a specific error
+  const timeoutError = new Error('Search timeout exceeded');
+  timeoutError.name = 'TimeoutError';
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(timeoutError), 120000); // 120-second timeout
   });
-  
-  // Clean up cache occasionally
-  if (Math.random() < 0.1) { // 10% chance to run cleanup
-    cleanupCache();
+
+  try {
+    // Use Promise.race to handle potential timeouts in any of the steps
+    // Start both analysis and embedding generation concurrently
+    const analysisPromise = analyzeQuery(query);
+    const embeddingsPromise = generateEmbeddingsWithFallback(query);
+    
+    // Wait for both promises with timeout
+    const analysis = await Promise.race([analysisPromise, timeoutPromise]) as QueryAnalysisResult;
+    const embeddingResult = await Promise.race([embeddingsPromise, timeoutPromise]) as EmbeddingResult;
+    
+    // Execute the comment-only search
+    const searchResults = await Promise.race([
+      executeSearch(
+        query,
+        embeddingResult.embedding,
+        analysis.intent,
+        analysis.topics,
+        analysis.locations,
+        maxResults,
+        similarityThreshold,
+        vectorWeight,
+        textWeight,
+        efSearch
+      ),
+      timeoutPromise
+    ]) as CommentSearchResult[];
+    
+    // Log if no results were found
+    if (searchResults.length === 0) {
+      console.log(`No search results found for query: "${query}"`);
+      console.log(`Search parameters: intent=${analysis.intent}, topics=${analysis.topics?.join(',')}, locations=${analysis.locations?.join(',')}`);
+    }
+    
+    // Store in cache
+    const cacheKey = createCacheKey(options);
+    SEARCH_CACHE.set(cacheKey, {
+      timestamp: Date.now(),
+      results: searchResults,
+      analysis
+    });
+    
+    // Clean up cache occasionally
+    if (Math.random() < 0.1) { // 10% chance to run cleanup
+      cleanupCache();
+    }
+    
+    return {
+      results: searchResults,
+      analysis: includeAnalysis ? analysis : undefined,
+      query, // Always include the original query
+      cached: false,
+      originalQuery: query // Add an explicit originalQuery field for clarity
+    };
+  } catch (error) {
+    console.error('Error in search process:', error);
+    
+    // If the error is a timeout, try to return partial results
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      console.log('Search timeout occurred, attempting to return partial results');
+      
+      // Try to retrieve any cached results for similar queries
+      const similarQueries = SEARCH_CACHE.keys();
+      for (const key of similarQueries) {
+        if (key.includes(query.toLowerCase().substring(0, 5))) {
+          const cachedResult = SEARCH_CACHE.get(key);
+          if (cachedResult) {
+            console.log('Using cached results for similar query:', key);
+            return {
+              results: cachedResult.results,
+              analysis: includeAnalysis ? cachedResult.analysis : undefined,
+              query, // Include the original query
+              cached: true,
+              partial: true
+            };
+          }
+        }
+      }
+      
+      // If no similar cached results, return a timeout error
+      throw new ApiError('Search operation timed out. Please try a more specific query.', 408);
+    }
+    
+    // For other errors, just re-throw
+    throw error;
   }
-  
-  return {
-    results: searchResults,
-    analysis: includeAnalysis ? analysis : undefined,
-    query,
-    cached: false
-  };
 } 

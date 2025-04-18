@@ -15,8 +15,16 @@ export const preferredRegion = 'auto';
  */
 export async function POST(req: Request) {
   try {
-    // Parse request
-    const { query, maxResults = 10, skipCache = false, promptVersion = 'default' } = await req.json();
+    // Parse request with new hybrid search parameters
+    const { 
+      query, 
+      maxResults = 20, 
+      skipCache = false, 
+      promptVersion = 'default',
+      vectorWeight = 0.7,     // New parameter for hybrid search
+      textWeight = 0.3,       // New parameter for hybrid search
+      efSearch = 300          // Increase from 100 to 300
+    } = await req.json();
     
     if (!query || typeof query !== 'string') {
       return new Response(
@@ -49,17 +57,33 @@ export async function POST(req: Request) {
             timestamp: Date.now()
           }) + '\n'));
           
-          // Execute search
+          // Execute search with hybrid search parameters
           const searchResponse = await performFullSearch({
             query,
             maxResults: maxResults,
             includeAnalysis: true,
-            skipCache: skipCache
+            skipCache: skipCache,
+            vectorWeight: vectorWeight,
+            textWeight: textWeight,
+            efSearch: 300,
+            similarityThreshold: 0.6
           });
           
           // Log search time
           const searchTime = Date.now() - startTime;
           console.log(`Search completed in ${searchTime}ms for query: ${query}`);
+          
+          // Check if any results used fallback search and log it
+          const usedFallback = searchResponse.results.some(r => r.metadata?.search_fallback === true);
+          if (usedFallback) {
+            console.log(`⚠️ FALLBACK: Query "${query}" used text search fallback (vector search timed out)`);
+          } else {
+            console.log(`✅ VECTOR: Query "${query}" successfully used vector search`);
+          }
+          
+          // Log result match types for debugging
+          const matchTypes = searchResponse.results.map(r => r.match_type).filter((v, i, a) => a.indexOf(v) === i);
+          console.log(`Match types in results: ${matchTypes.join(', ')}`);
           
           // Send search complete status
           controller.enqueue(encoder.encode(JSON.stringify({ 
@@ -90,6 +114,19 @@ export async function POST(req: Request) {
           // Format client results
           const clientResults = searchResponse.results.map(formatResultForClient);
           
+          // Send metadata early so client has search results while content is streaming
+          const earlyMetadataJson = JSON.stringify({
+            searchResults: clientResults,
+            query,
+            analysis: searchResponse.analysis,
+            searchTime,
+            totalResults: searchResponse.results.length
+          });
+          
+          // Send early metadata before AI processing starts
+          console.log(`Sending early metadata with ${clientResults.length} search results`);
+          controller.enqueue(encoder.encode('METADATA:' + earlyMetadataJson + '\n'));
+          
           // DIRECT API CALL to Anthropic
           const apiKey = process.env.ANTHROPIC_API_KEY;
           
@@ -115,29 +152,87 @@ export async function POST(req: Request) {
           console.log('Request body structure:', Object.keys(requestBody));
           console.log('Model:', requestBody.model);
           
-          const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify(requestBody)
-          });
+          // Retry logic for handling overloaded_error
+          const MAX_RETRIES = 3;
+          const INITIAL_RETRY_DELAY = 1000;
           
-          if (!response.ok) {
-            // Log detailed error info but don't provide a fallback
-            const errorText = await response.text().catch(() => 'Unable to get error details');
-            console.error(`Anthropic API error: ${response.status} ${response.statusText}`);
-            console.error(`Error details: ${errorText}`);
-            console.error('Request headers:', {
-              'Content-Type': 'application/json',
-              'anthropic-version': '2023-06-01',
-              'x-api-key': 'present but not shown'
-            });
-            
-            // Just pass the error through to the client
-            throw new Error(`Anthropic API error: ${response.status} ${response.statusText} - ${errorText}`);
+          // Helper function for delay
+          const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+          
+          let retryCount = 0;
+          let response: Response | null = null;
+          
+          while (retryCount <= MAX_RETRIES) {
+            try {
+              if (retryCount > 0) {
+                // Calculate exponential backoff with jitter
+                const backoffDelay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount - 1);
+                const jitter = Math.random() * 0.3 * backoffDelay; // 0-30% jitter
+                const totalDelay = backoffDelay + jitter;
+                
+                console.log(`Anthropic API retry ${retryCount}/${MAX_RETRIES} after ${Math.round(totalDelay)}ms delay...`);
+                
+                // Send retry status to client
+                controller.enqueue(encoder.encode(JSON.stringify({ 
+                  type: 'status', 
+                  status: 'retrying' as StreamingStatus,
+                  message: `Service temporarily overloaded. Retry ${retryCount}/${MAX_RETRIES}...`,
+                  timestamp: Date.now()
+                }) + '\n'));
+                
+                await sleep(totalDelay);
+              }
+              
+              response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': apiKey,
+                  'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+              });
+              
+              // If we got a success response, break out of the retry loop
+              if (response.ok) {
+                break;
+              }
+              
+              // Handle non-overloaded errors immediately without retry
+              const errorText = await response.text().catch(() => 'Unable to get error details');
+              if (!errorText.includes('overloaded_error')) {
+                console.error(`Anthropic API error: ${response.status} ${response.statusText}`);
+                console.error(`Error details: ${errorText}`);
+                throw new Error(`Anthropic API error: ${response.status} ${response.statusText} - ${errorText}`);
+              }
+              
+              // It was an overloaded error, so we'll retry
+              console.error(`Anthropic API overloaded. Will retry (${retryCount + 1}/${MAX_RETRIES})`);
+              retryCount++;
+              
+              // If we've used all our retries, throw the last error
+              if (retryCount > MAX_RETRIES) {
+                throw new Error(`Anthropic API overloaded after ${MAX_RETRIES} retries. Please try again later.`);
+              }
+            } catch (error) {
+              // If it's not a response error (e.g., network error), throw immediately
+              if (!response) {
+                throw error;
+              }
+              
+              // Otherwise, continue with the retry loop
+              retryCount++;
+              
+              // If we've used all our retries, throw the last error
+              if (retryCount > MAX_RETRIES) {
+                throw error;
+              }
+            }
+          }
+          
+          if (!response || !response.ok) {
+            // This should never happen if the loop worked properly, but just in case
+            throw new Error(`Failed to get a successful response from Anthropic API after ${retryCount} retries`);
           }
           
           // Process the streaming response from Anthropic
@@ -154,37 +249,57 @@ export async function POST(req: Request) {
             const chunk = decoder.decode(value);
             console.log('Received chunk:', chunk.substring(0, 50) + '...');
             
-            const lines = chunk.split('\n').filter(line => line.trim() && line.startsWith('data: '));
+            const lines = chunk.split('\n').filter(line => line.trim());
             
             for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              
               const data = line.substring(6); // Remove 'data: ' prefix
               if (data === '[DONE]') continue;
               
               try {
                 const parsed = JSON.parse(data);
-                console.log('Parsed data type:', parsed.type);
+                console.log('Parsed event type:', parsed.type);
                 
-                // Handle different Anthropic streaming response formats
-                if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.text) {
-                  accumulatedText += parsed.delta.text;
-                  console.log('Added content delta, new length:', accumulatedText.length);
-                } else if (parsed.type === 'content_block_start' && parsed.content_block && parsed.content_block.text) {
-                  accumulatedText += parsed.content_block.text;
-                  console.log('Added content block, new length:', accumulatedText.length);
-                } else if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.type === 'text_delta') {
-                  accumulatedText += parsed.delta.text;
-                  console.log('Added text delta, new length:', accumulatedText.length);
-                } else if (parsed.completion) {
-                  // Legacy format
-                  accumulatedText += parsed.completion;
-                  console.log('Added completion, new length:', accumulatedText.length);
+                // Handle error events from Anthropic
+                if (parsed.type === 'error') {
+                  const errorDetails = parsed.error || {};
+                  console.error('Anthropic streaming error:', JSON.stringify(errorDetails));
+                  
+                  // Return a meaningful error to the client
+                  controller.enqueue(encoder.encode(JSON.stringify({ 
+                    type: 'status', 
+                    status: 'error' as StreamingStatus,
+                    message: `Anthropic API error: ${errorDetails.type || 'unknown'} - ${errorDetails.message || 'No details provided'}`,
+                    timestamp: Date.now()
+                  }) + '\n'));
+                  
+                  // If overloaded and no search results, provide a fallback content message
+                  if (errorDetails.type === 'overloaded_error' && clientResults.length === 0) {
+                    controller.enqueue(encoder.encode(JSON.stringify({ 
+                      type: 'content', 
+                      content: "I apologize, but I couldn't find specific information about this query in our database, and our AI service is currently experiencing high demand. Please try a different query or try again in a few moments."
+                    }) + '\n'));
+                  }
+                  
+                  // Don't break the loop here - we might get additional events
                 }
-                
-                // Send content update with whatever text we've accumulated
-                controller.enqueue(encoder.encode(JSON.stringify({ 
-                  type: 'content', 
-                  content: accumulatedText
-                }) + '\n'));
+                // Handle Anthropic streaming response (Claude 3 Messages API format)
+                else if (parsed.type === 'content_block_delta' && 
+                    parsed.delta && 
+                    parsed.delta.type === 'text_delta' && 
+                    parsed.delta.text) {
+                  // This is the main text content from Claude
+                  accumulatedText += parsed.delta.text;
+                  
+                  // Send content update with current accumulated text
+                  controller.enqueue(encoder.encode(JSON.stringify({ 
+                    type: 'content', 
+                    content: accumulatedText
+                  }) + '\n'));
+                  
+                  console.log('Added text delta, new length:', accumulatedText.length);
+                }
               } catch (e) {
                 console.error('Error parsing SSE data:', e, 'Raw data:', data);
               }
@@ -215,6 +330,10 @@ export async function POST(req: Request) {
             provider: 'anthropic',
             model: 'claude-3-5-haiku-20241022'
           });
+          
+          // Log metadata for debugging
+          console.log(`Sending metadata with ${clientResults.length} search results`);
+          console.log(`First result title: ${clientResults[0]?.title || 'No results'}`);
           
           // Send metadata
           controller.enqueue(encoder.encode('METADATA:' + metadataJson + '\n'));

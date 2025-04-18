@@ -36,6 +36,7 @@ interface EmbeddingJob {
   estimated_tokens?: number
 }
 
+// Enhanced job result interface with proper types
 interface JobResult {
   id: string
   success: boolean
@@ -43,6 +44,12 @@ interface JobResult {
   chunks?: number
   tokens?: number
   processingTime?: number
+}
+
+// Interface for enhanced embedding results
+interface EnhancedEmbeddingResult {
+  embeddingTypes?: string[]
+  // Add other properties if needed
 }
 
 // Estimate tokens in a string (rough approximation)
@@ -97,7 +104,6 @@ async function processJob(
   currentTokenUsage: number
 ): Promise<JobResult> {
   const startTime = Date.now();
-  let chunkCount = 0;
   let tokenCount = 0;
   
   try {
@@ -126,8 +132,11 @@ async function processJob(
       throw new Error('No content returned from content function');
     }
 
+    // Ensure content is treated as a string
+    const contentString = typeof content === 'string' ? content : JSON.stringify(content);
+    
     // Estimate tokens before processing
-    tokenCount = estimateTokens(content);
+    tokenCount = estimateTokens(contentString);
     
     // Check if this would exceed our token budget
     if (currentTokenUsage + tokenCount > MAX_TOKEN_BUDGET) {
@@ -145,7 +154,7 @@ async function processJob(
       };
     }
 
-    console.log(`Generated content for ${job.record_id}: "${content.substring(0, 50)}..."`);
+    console.log(`Generated content for ${job.record_id}: "${contentString.substring(0, 50)}..."`);
     console.log(`Estimated ${tokenCount} tokens`);
     
     // Determine if job is for post or comment
@@ -176,7 +185,7 @@ async function processJob(
       throw new Error(`Enhanced embeddings failed: ${errorText}`);
     }
     
-    const enhancedResult = await enhancedEmbedResponse.json();
+    const enhancedResult = await enhancedEmbedResponse.json() as EnhancedEmbeddingResult;
     console.log(`Enhanced embeddings generated for ${job.record_id}:`, enhancedResult.embeddingTypes);
     
     // For backward compatibility, update the original embedding column
@@ -195,7 +204,7 @@ async function processJob(
       'record_embedding_metrics',
       {
         p_job_type: contentType,
-        p_content_length: content.length,
+        p_content_length: contentString.length,
         p_chunk_count: enhancedResult.embeddingTypes?.length || 0,
         p_processing_time_ms: Date.now() - startTime,
         p_subreddit: job.subreddit,
@@ -284,7 +293,7 @@ Deno.serve(async (req: Request) => {
     console.log(`Fetching up to ${customBatchSize} pending embedding jobs with priority >= ${customPriority}...`);
     
     // Get pending jobs with priority filtering
-    let rpcParams: Record<string, any> = { 
+    const rpcParams: Record<string, any> = { 
       limit_count: customBatchSize,
       min_priority: customPriority
     };
@@ -314,8 +323,11 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Process jobs in batch
-    const results = await processBatch(supabaseClient, jobs);
+    // Process jobs in batch with type assertion to bypass type mismatch
+    const results = await processBatch(
+      supabaseClient as any, 
+      jobs
+    );
     
     // Analyze results
     const successCount = results.filter(r => r.success).length;

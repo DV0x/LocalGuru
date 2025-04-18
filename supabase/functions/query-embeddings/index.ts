@@ -2,18 +2,31 @@ import { corsHeaders } from '../_shared/cors.ts';
 // @deno-types="npm:openai@4.20.1"
 import OpenAI from 'npm:openai@4.20.1';
 import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
-import { crypto } from 'npm:@peculiar/webcrypto@1.4.3';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+/**
+ * QUERY EMBEDDINGS EDGE FUNCTION
+ * 
+ * This function generates 512-dimensional embeddings from OpenAI's text-embedding models.
+ * 
+ * IMPORTANT: This function always generates 512-dimensional embeddings regardless of 
+ * what's passed in the request. This is required for compatibility with the 
+ * hybrid_search database function which expects exactly 512 dimensions.
+ */
 
 // Type for the query embedding request
 interface QueryEmbeddingRequest {
   query: string;
   storeInCache?: boolean;
+  model?: string;
+  dimensions?: number;
 }
 
 // Type for the embedding response
 interface EmbeddingResponse {
   embedding: number[];
   source_model: string;
+  dimensions: number;
   cached: boolean;
 }
 
@@ -32,144 +45,163 @@ const log = (message: string, data?: any) => {
   console.log(`[query-embeddings] ${message}`, data ? JSON.stringify(data) : '');
 };
 
-console.info('Query Embeddings function started');
+console.info('Query Embeddings function started (512-dimension version)');
 
-Deno.serve(async (req: Request) => {
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
+if (!OPENAI_API_KEY) {
+  throw new Error("Missing OpenAI API key");
+}
+
+serve(async (req: Request) => {
   // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Parse the request body
-    const { query, storeInCache = true } = await req.json() as QueryEmbeddingRequest;
-
-    if (!query || query.trim() === '') {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Query is required',
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
-        }
-      );
+    // Parse the request body and extract query
+    const requestData = await req.json();
+    console.log("Received request:", JSON.stringify(requestData, null, 2));
+    
+    const { query } = requestData;
+    if (!query) {
+      throw new Error("Query is required");
     }
 
-    // Generate a cache key from the query
-    const cacheKey = createCacheKey(query);
+    // Always use 512 dimensions for embeddings to match database functions
+    const embeddingDimensions = 512;
     
-    // Check cache first
-    if (storeInCache) {
-      log('Checking cache', { cacheKey });
-      const { data: cachedEmbedding, error: cacheError } = await supabase
-        .from('embedding_cache')
-        .select('embedding, source_model')
-        .eq('query_hash', cacheKey)
-        .gt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()) // Last 7 days
-        .limit(1)
-        .single();
-      
-      if (!cacheError && cachedEmbedding) {
-        log('Cache hit', { model: cachedEmbedding.source_model });
-        return new Response(
-          JSON.stringify({
-            embedding: cachedEmbedding.embedding,
-            source_model: cachedEmbedding.source_model,
-            cached: true
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      log('Cache miss, generating new embedding');
-    }
-    
-    // Call OpenAI to generate embeddings
-    const openaiKey = Deno.env.get('OPENAI_API_KEY') || '';
-    if (!openaiKey) {
-      log('Missing OpenAI API key');
-      return new Response(
-        JSON.stringify({ error: 'Missing OpenAI API key' }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500
-        }
-      );
-    }
-    
-    // Generate embeddings from OpenAI
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
+    // Generate query embedding via OpenAI
+    console.log(`Generating ${embeddingDimensions}-dimensional embedding for query: "${query}"`);
+    const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiKey}`
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         input: query,
-        model: 'text-embedding-3-small'
-      })
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      log('OpenAI API error', { status: response.status, error: errorText });
-      throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
-    }
-    
-    const responseData = await response.json();
-    const embedding = responseData.data[0].embedding;
-    const model = responseData.model || 'text-embedding-3-small';
-    
-    log('Embedding generated', { model, embeddingLength: embedding.length });
-    
-    // Store in cache if requested
-    if (storeInCache) {
-      log('Storing in cache', { cacheKey, model });
-      const { error: storeError } = await supabase
-        .from('embedding_cache')
-        .upsert({
-          query_hash: cacheKey,
-          query_text: query,
-          embedding,
-          source_model: model,
-          created_at: new Date().toISOString()
-        });
-      
-      if (storeError) {
-        log('Error storing in cache', storeError);
-      }
-    }
-    
-    // Return the embeddings
-    const result: EmbeddingResponse = {
-      embedding,
-      source_model: model,
-      cached: false
-    };
-    
-    return new Response(
-      JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    log('Unexpected error', error);
-    return new Response(
-      JSON.stringify({
-        error: `Unexpected error: ${error.message || 'Unknown error'}`,
-        details: String(error)
+        model: "text-embedding-3-large",
+        dimensions: embeddingDimensions,
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+    });
+
+    if (!embeddingResponse.ok) {
+      const errorDetails = await embeddingResponse.text();
+      console.error("OpenAI API error:", errorDetails);
+      throw new Error(`OpenAI API error: ${embeddingResponse.status} ${errorDetails}`);
+    }
+
+    const {
+      data: [{ embedding }],
+    } = await embeddingResponse.json();
+
+    console.log(`Embedding generated successfully, length: ${embedding.length}`);
+
+    // Analyze query to extract intent, topics, and locations
+    // Use OpenAI to extract structured information
+    console.log("Analyzing query for intent, topics, and locations");
+    const instructions = `
+      Analyze the following query to extract:
+      1. The user's primary intent (one of: general, recommendation, information, comparison, experience, local_events, how_to, discovery)
+      2. Topics mentioned (e.g., food, coffee, shopping, etc.)
+      3. Specific locations mentioned (e.g., cities, neighborhoods, landmarks)
+
+      Format your response as a JSON object with keys: "intent", "topics", and "locations".
+      Only return the valid JSON object, nothing else.
+    `;
+
+    const analysisResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: instructions,
+          },
+          {
+            role: "user",
+            content: query,
+          },
+        ],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!analysisResponse.ok) {
+      const errorDetails = await analysisResponse.text();
+      console.error("Query analysis error:", errorDetails);
+      throw new Error(`Query analysis error: ${analysisResponse.status} ${errorDetails}`);
+    }
+
+    const analysisData = await analysisResponse.json();
+    
+    console.log("Analysis response:", JSON.stringify(analysisData, null, 2));
+    
+    let parsedResponse;
+    try {
+      // Extract the JSON string from the response and parse it
+      const responseContent = analysisData.choices[0].message.content;
+      console.log("Raw analysis content:", responseContent);
+      parsedResponse = JSON.parse(responseContent);
+      
+      console.log("Parsed analysis:", JSON.stringify(parsedResponse, null, 2));
+    } catch (e) {
+      console.error("Error parsing analysis response:", e);
+      // Provide default values if parsing fails
+      parsedResponse = { intent: "general", topics: [], locations: [] };
+    }
+
+    // Extract intent, topics, and locations from the analysis
+    const { intent = "general", topics = [], locations = [] } = parsedResponse;
+
+    // Prepare the final response with the embedding and analysis results
+    const responseData = {
+      query,
+      embedding,
+      embeddingLength: embedding.length,
+      intent,
+      topics,
+      locations,
+      // Default values for search parameters
+      maxResults: requestData.maxResults || 10,
+      matchThreshold: requestData.matchThreshold || 0.6,
+      vectorWeight: requestData.vectorWeight || 0.7,
+      textWeight: requestData.textWeight || 0.3,
+      efSearch: requestData.efSearch || 200,
+    };
+
+    console.log("Final response data:", JSON.stringify({
+      ...responseData,
+      embedding: `[${embedding.length} dimensions]`, // Don't log full embedding
+    }, null, 2));
+
+    // Return the response with CORS headers
+    return new Response(JSON.stringify(responseData), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  } catch (error) {
+    console.error("Error processing request:", error instanceof Error ? error.message : String(error));
+    
+    // Return error response with CORS headers
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
 });
 
-function createCacheKey(query: string): string {
-  return md5(query.trim().toLowerCase());
+function createCacheKey(query: string, model: string, dimensions: number): string {
+  return md5(`${query.trim().toLowerCase()}_${model}_${dimensions}`);
 }
 
 // Simple MD5 function that works in Deno

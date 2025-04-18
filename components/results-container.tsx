@@ -17,8 +17,8 @@ export function ResultsContainer({
   if (isLoading) {
     return (
       <div className="w-full flex flex-col items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400 mb-4" />
-        <p className="text-gray-400">Searching for the best travel recommendations...</p>
+        <div className="inline-block h-12 w-12 border-4 border-black border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="font-medium">Searching for local gems...</p>
       </div>
     );
   }
@@ -26,9 +26,9 @@ export function ResultsContainer({
   if (error) {
     return (
       <div className="w-full flex flex-col items-center justify-center py-12 text-center">
-        <div className="bg-red-950/30 text-red-400 p-4 rounded-lg max-w-md border border-red-900/50">
-          <p className="font-medium mb-1">Error</p>
-          <p className="text-sm">{error}</p>
+        <div className="bg-red-50 text-red-500 p-6 rounded-lg max-w-md border-2 border-black neo-card">
+          <p className="font-bold mb-2">Error</p>
+          <p>{error}</p>
         </div>
       </div>
     );
@@ -40,8 +40,8 @@ export function ResultsContainer({
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      <h2 className="text-xl font-semibold mb-4 text-white">Travel Recommendations</h2>
-      <div className="grid gap-6 md:grid-cols-1">
+      <h2 className="text-2xl font-bold mb-6">Local Recommendations</h2>
+      <div className="grid gap-6">
         {results.map((recommendation) => (
           <ResultCard 
             key={recommendation.id} 

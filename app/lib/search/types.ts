@@ -29,6 +29,10 @@ export interface SearchOptions {
   useMetadataBoost?: boolean;
   useFallback?: boolean;
   skipCache?: boolean;
+  // New parameters for hybrid search
+  vectorWeight?: number;   // Weight for vector similarity (default 0.7)
+  textWeight?: number;     // Weight for text search score (default 0.3)
+  efSearch?: number;       // HNSW index search parameter (default 100)
 }
 
 /**
@@ -52,4 +56,19 @@ export interface FeedbackOptions {
   isHelpful: boolean;
   feedbackSource?: string;
   userComments?: string;
+}
+
+/**
+ * Parameters for direct content representation search
+ */
+export interface ContentRepresentationSearchParams {
+  query: string;
+  query_embedding: number[];
+  representation_types: string[];
+  max_results?: number;
+  similarity_threshold?: number;
+  subreddits?: string[];
+  metadata_boost?: boolean;
+  use_fallback?: boolean;
+  debug?: boolean;
 } 

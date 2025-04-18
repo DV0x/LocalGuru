@@ -1,0 +1,5 @@
+{
+  "maxDuration": 60,
+  "importMap": "../import_map.json",
+  "verifyJWT": true
+} 

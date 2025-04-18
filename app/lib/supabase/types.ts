@@ -21,9 +21,11 @@ export interface QueryAnalysisResult {
  */
 export interface EmbeddingResult {
   query: string;
-  embedding: number[]; // 1536-dimensional vector
+  embedding: number[]; // 512-dimensional vector (was previously 1536)
   cached?: boolean;
   created_at?: string;
+  source_model?: string; // The model used to generate the embedding
+  dimensions?: number; // The dimensionality of the embedding (512 or 1536)
 }
 
 /**

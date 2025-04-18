@@ -9,11 +9,52 @@ import {
   ThreadContext 
 } from '../_shared/thread-context.ts'
 
+// Request interface
 interface EmbeddingRequest {
   contentId: string;
   contentType: 'post' | 'comment';
   includeContext?: boolean;
   refreshRepresentations?: boolean;
+}
+
+// Define metadata type with thread_context property
+interface EnhancedMetadata {
+  topics: string[];
+  entities: Record<string, string[] | undefined>;
+  locations: string[];
+  semanticTags: string[];
+  thread_context?: ThreadContext;
+  type?: string;
+  length?: number;
+  tokenEstimate?: number;
+  [key: string]: any; // Allow additional properties
+}
+
+// Post interface for type safety
+interface Post {
+  id: string;
+  title: string;
+  content?: string;
+  subreddit: string;
+}
+
+// Comment interface for type safety
+interface Comment {
+  id: string;
+  content?: string;
+  post_id: string;
+  parent_id?: string;
+  path?: string[];
+  post?: {
+    title: string;
+    subreddit: string;
+  };
+}
+
+// Parent comment data interface
+interface ParentComment {
+  id: string;
+  content: string;
 }
 
 // Initialize OpenAI with improved error handling
@@ -196,7 +237,8 @@ async function storeContentRepresentation(
     }
     
     console.log(`Successfully stored ${representationType} representation with ID:`, data);
-    return data;
+    // Fix type error: Type 'unknown' is not assignable to type 'string | null'
+    return data as string;
   } catch (error) {
     console.error(`Error in storeContentRepresentation for ${representationType}:`, error);
     return null;
@@ -211,6 +253,7 @@ Deno.serve(async (req: Request) => {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Connection': 'keep-alive'
   };
 
   // Handle OPTIONS request
@@ -232,7 +275,7 @@ Deno.serve(async (req: Request) => {
     
     console.log(`Processing ${contentType} with ID: ${contentId}, includeContext: ${includeContext}, refreshRepresentations: ${refreshRepresentations}`);
     
-    // Create Supabase client
+    // Create Supabase client with proper typing
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -245,12 +288,17 @@ Deno.serve(async (req: Request) => {
     );
     
     // Get content data
-    let content;
-    let threadContext: ThreadContext;
+    let content: Post | Comment;
+    let threadContext: ThreadContext = {
+      postId: '',
+      postTitle: '',
+      subreddit: ''
+    };
     let contentText = '';
     
     console.log(`Fetching ${contentType} data...`);
     
+    // Fetch the content data first (this is quick and should be in the main function)
     if (contentType === 'post') {
       // Fetch post data
       const { data: post, error } = await supabaseClient
@@ -267,7 +315,7 @@ Deno.serve(async (req: Request) => {
         );
       }
       
-      content = post;
+      content = post as Post;
       contentText = `${post.title}\n\n${post.content || ''}`;
       
       // For posts, build a simpler context
@@ -294,33 +342,16 @@ Deno.serve(async (req: Request) => {
         );
       }
       
-      content = comment;
+      content = comment as Comment;
       contentText = comment.content || '';
       
-      // Get parent comments to build thread context if needed
-      let parentCommentData = [];
-      if (includeContext && comment.path && comment.path.length > 0) {
-        const { data: parents } = await supabaseClient
-          .from('reddit_comments')
-          .select('id, content')
-          .in('id', comment.path)
-          .order('id');
-        
-        if (parents) {
-          parentCommentData = parents;
-        }
-      }
-      
-      // Build thread context using our new utility
-      threadContext = buildThreadContext(
-        comment.id,
-        {
-          id: comment.post_id,
-          title: comment.post?.title,
-          subreddit: comment.post?.subreddit
-        },
-        parentCommentData
-      );
+      // Basic thread context setup (we'll get parents in background processing)
+      threadContext = {
+        postId: comment.post_id,
+        postTitle: comment.post?.title || '',
+        subreddit: comment.post?.subreddit || '',
+        path: comment.path
+      };
     } else {
       console.error(`Invalid content type: ${contentType}`);
       return new Response(
@@ -328,157 +359,196 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers }
       );
     }
-    
-    console.log(`Content fetched successfully. Extracting entities...`);
-    
-    // Extract entities for metadata enrichment using our shared utility
-    let extractedEntities: EntityExtractionResult;
-    try {
-      extractedEntities = await extractEntities(
-        contentText, 
-        contentType, 
-        contentType === 'post' 
-          ? { subreddit: threadContext.subreddit, title: threadContext.postTitle } 
-          : { subreddit: threadContext.subreddit, postTitle: threadContext.postTitle }
-      );
-      
-      console.log('Entities extracted successfully:', {
-        topicCount: extractedEntities.topics.length,
-        locationCount: extractedEntities.locations.length,
-        semanticTagCount: extractedEntities.semanticTags.length,
-        entityTypes: Object.keys(extractedEntities.entities)
-      });
-    } catch (entityError) {
-      console.error('Entity extraction failed:', entityError);
-      // Continue with default empty values if entity extraction fails
-      extractedEntities = {
-        entities: {},
-        topics: [],
-        locations: [],
-        semanticTags: []
-      };
-    }
-    
-    console.log('Generating embeddings with multiple representations...');
-    
-    // Generate various embedding representations
-    const embeddings = await generateMultiRepresentationEmbeddings(
-      content,
-      contentType,
-      threadContext,
-      extractedEntities,
-      includeContext
-    );
-    
-    console.log(`Generated ${Object.keys(embeddings).length} embedding types`);
-    
-    // Store representations in content_representations table
-    const storedRepresentations: string[] = [];
-    
-    // Only store representations if requested or if they don't exist
-    if (refreshRepresentations) {
-      for (const [repType, repData] of Object.entries(embeddings)) {
-        console.log(`Storing ${repType} representation...`);
+
+    // Run the intensive embedding generation in the background using EdgeRuntime.waitUntil
+    // This allows the function to return a quick response while continuing to process
+    const processingPromise = (async () => {
+      try {
+        console.log('Starting background processing of embeddings');
         
-        // CRITICAL FIX: Ensure metadata includes entity extraction data
-        const enhancedMetadata = { 
-          ...repData.metadata, 
-          topics: extractedEntities.topics,
-          entities: extractedEntities.entities,
-          locations: extractedEntities.locations,
-          semanticTags: extractedEntities.semanticTags
-        };
-        
-        // For comments, ensure thread context is included
-        if (contentType === 'comment') {
-          enhancedMetadata.thread_context = threadContext;
+        // Get parent comments to build thread context if needed (for comments)
+        if (contentType === 'comment' && includeContext && threadContext.path && threadContext.path.length > 0) {
+          const { data: parents } = await supabaseClient
+            .from('reddit_comments')
+            .select('id, content')
+            .in('id', threadContext.path)
+            .order('id');
+          
+          if (parents) {
+            // Build thread context using our utility
+            threadContext = buildThreadContext(
+              (content as Comment).id,
+              {
+                id: (content as Comment).post_id,
+                title: threadContext.postTitle,
+                subreddit: threadContext.subreddit
+              },
+              parents as ParentComment[]
+            );
+          }
         }
         
-        const repId = await storeContentRepresentation(
-          supabaseClient,
-          contentId,
+        // Extract entities for metadata enrichment
+        let extractedEntities: EntityExtractionResult;
+        try {
+          extractedEntities = await extractEntities(
+            contentText, 
+            contentType, 
+            contentType === 'post' 
+              ? { subreddit: threadContext.subreddit, title: threadContext.postTitle } 
+              : { subreddit: threadContext.subreddit, postTitle: threadContext.postTitle }
+          );
+          
+          console.log('Entities extracted successfully:', {
+            topicCount: extractedEntities.topics.length,
+            locationCount: extractedEntities.locations.length,
+            semanticTagCount: extractedEntities.semanticTags.length,
+            entityTypes: Object.keys(extractedEntities.entities)
+          });
+        } catch (entityError) {
+          console.error('Entity extraction failed:', entityError);
+          // Continue with default empty values if entity extraction fails
+          extractedEntities = {
+            entities: {},
+            topics: [],
+            locations: [],
+            semanticTags: []
+          };
+        }
+        
+        console.log('Generating embeddings with multiple representations...');
+        
+        // Generate various embedding representations
+        const embeddings = await generateMultiRepresentationEmbeddings(
+          content,
           contentType,
-          repType,
-          repData.embedding,
-          enhancedMetadata  // Use enhanced metadata with entities
+          threadContext,
+          extractedEntities,
+          includeContext
         );
         
-        if (repId) {
-          storedRepresentations.push(repType);
+        console.log(`Generated ${Object.keys(embeddings).length} embedding types`);
+        
+        // Store representations in content_representations table
+        const storedRepresentations: string[] = [];
+        
+        // Only store representations if requested or if they don't exist
+        if (refreshRepresentations) {
+          for (const [repType, repData] of Object.entries(embeddings)) {
+            console.log(`Storing ${repType} representation...`);
+            
+            // CRITICAL FIX: Ensure metadata includes entity extraction data
+            // Define the metadata explicitly with the thread_context property
+            const enhancedMetadata: Record<string, any> = { 
+              ...repData.metadata, 
+              topics: extractedEntities.topics,
+              entities: extractedEntities.entities,
+              locations: extractedEntities.locations,
+              semanticTags: extractedEntities.semanticTags
+            };
+            
+            // For comments, ensure thread context is included
+            if (contentType === 'comment') {
+              // Fix type error: Property 'thread_context' does not exist
+              enhancedMetadata.thread_context = threadContext;
+            }
+            
+            const repId = await storeContentRepresentation(
+              // Fix type error: SupabaseClient type mismatch
+              supabaseClient as any,
+              contentId,
+              contentType,
+              repType,
+              repData.embedding,
+              enhancedMetadata  // Use enhanced metadata with entities
+            );
+            
+            if (repId) {
+              storedRepresentations.push(repType);
+            }
+          }
         }
-      }
-    }
-    
-    // Chunk content for long posts/comments
-    console.log('Processing content chunking...');
-    let chunks: string[] = [];
-    let chunkEmbeddings: Record<string, number[]>[] = [];
-    
-    if (contentText.length > 500) {
-      // Only chunk if content is substantial
-      chunks = chunkText(contentText);
-      console.log(`Created ${chunks.length} chunks from content`);
-      
-      // Generate embeddings for each chunk
-      for (const [index, chunk] of chunks.entries()) {
-        try {
-          const chunkEmbedding = await createEmbedding(chunk);
-          chunkEmbeddings.push({
-            [`chunk_${index + 1}`]: chunkEmbedding
+        
+        // Chunk content for long posts/comments
+        console.log('Processing content chunking...');
+        let chunks: string[] = [];
+        let chunkEmbeddings: Record<string, number[]>[] = [];
+        
+        if (contentText.length > 500) {
+          // Only chunk if content is substantial
+          chunks = chunkText(contentText);
+          console.log(`Created ${chunks.length} chunks from content`);
+          
+          // Generate embeddings for each chunk
+          for (const [index, chunk] of chunks.entries()) {
+            try {
+              const chunkEmbedding = await createEmbedding(chunk);
+              chunkEmbeddings.push({
+                [`chunk_${index + 1}`]: chunkEmbedding
+              });
+            } catch (chunkError) {
+              console.error(`Error embedding chunk ${index + 1}:`, chunkError);
+            }
+          }
+        }
+        
+        console.log('Storing extracted entities...');
+        
+        // Store extracted entities - now including semantic tags for posts
+        if (contentType === 'post') {
+          await supabaseClient
+            .from('reddit_posts')
+            .update({
+              extracted_entities: extractedEntities.entities,
+              extracted_topics: extractedEntities.topics,
+              extracted_locations: extractedEntities.locations,
+              semantic_tags: extractedEntities.semanticTags
+            })
+            .eq('id', contentId);
+        } else {
+          const threadContextJSON = JSON.stringify({
+            postTitle: threadContext.postTitle,
+            subreddit: threadContext.subreddit,
+            parentId: threadContext.parentId,
+            path: threadContext.path,
+            depth: threadContext.depth,
+            summary: getThreadSummary(threadContext)
           });
-        } catch (chunkError) {
-          console.error(`Error embedding chunk ${index + 1}:`, chunkError);
+          
+          await supabaseClient
+            .from('reddit_comments')
+            .update({
+              extracted_entities: extractedEntities.entities,
+              extracted_topics: extractedEntities.topics,
+              thread_context: threadContextJSON,
+            })
+            .eq('id', contentId);
         }
+        
+        console.log('Background processing completed successfully');
+      } catch (error) {
+        console.error('Error in background processing:', error);
       }
+    })();
+    
+    // Use EdgeRuntime.waitUntil to run long-running tasks in the background
+    try {
+      // @ts-ignore - EdgeRuntime may not be recognized by TypeScript
+      EdgeRuntime.waitUntil(processingPromise);
+    } catch (e) {
+      // If EdgeRuntime is not available, just log and continue
+      console.warn('EdgeRuntime.waitUntil not available, processing may be limited by timeout');
+      // We could await the promise here, but that would block the response
     }
     
-    console.log('Storing extracted entities...');
-    
-    // Store extracted entities - now including semantic tags for posts
-    if (contentType === 'post') {
-      await supabaseClient
-        .from('reddit_posts')
-        .update({
-          extracted_entities: extractedEntities.entities,
-          extracted_topics: extractedEntities.topics,
-          extracted_locations: extractedEntities.locations,
-          semantic_tags: extractedEntities.semanticTags
-        })
-        .eq('id', contentId);
-    } else {
-      const threadContextJSON = JSON.stringify({
-        postTitle: threadContext.postTitle,
-        subreddit: threadContext.subreddit,
-        parentId: threadContext.parentId,
-        path: threadContext.path,
-        depth: threadContext.depth,
-        summary: getThreadSummary(threadContext)
-      });
-      
-      await supabaseClient
-        .from('reddit_comments')
-        .update({
-          extracted_entities: extractedEntities.entities,
-          extracted_topics: extractedEntities.topics,
-          thread_context: threadContextJSON,
-        })
-        .eq('id', contentId);
-    }
-    
-    console.log('Storing main embeddings in content_representations table...');
-    
+    // Return a quick response to the client
     return new Response(
       JSON.stringify({
         success: true,
         contentId,
         contentType,
-        embeddingTypes: Object.keys(embeddings),
-        storedRepresentations,
-        chunkCount: chunks.length,
-        metadata: {
-          topics: extractedEntities.topics,
-          locations: extractedEntities.locations
-        }
+        status: 'processing',
+        message: 'Embedding generation started in the background'
       }),
       { headers }
     );
