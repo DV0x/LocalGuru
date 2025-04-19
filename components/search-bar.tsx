@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Search, Mic } from "lucide-react";
 
 // Add TypeScript declarations for the Web Speech API
@@ -13,10 +13,18 @@ declare global {
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
+  initialValue?: string;
 }
 
-export function SearchBar({ onSearch }: SearchBarProps) {
-  const [query, setQuery] = useState("");
+export function SearchBar({ onSearch, initialValue = "" }: SearchBarProps) {
+  const [query, setQuery] = useState(initialValue);
+
+  // Sync with initialValue when it changes
+  useEffect(() => {
+    if (initialValue !== undefined) {
+      setQuery(initialValue);
+    }
+  }, [initialValue]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -29,15 +37,15 @@ export function SearchBar({ onSearch }: SearchBarProps) {
     <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto">
       <div className="relative">
         <input
-          type="text"
+            type="text"
           className="search-input pr-24"
-          placeholder="Discover hidden restaurants, activities, local spots..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search query"
-        />
-
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            placeholder="Discover hidden restaurants, activities, local spots..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search query"
+          />
+          
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
           <button type="button" className="p-2 hover:bg-gray-100 rounded-full" aria-label="Voice search">
             <Mic size={20} />
           </button>

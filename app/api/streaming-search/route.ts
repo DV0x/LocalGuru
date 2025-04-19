@@ -73,6 +73,19 @@ export async function POST(req: Request) {
           const searchTime = Date.now() - startTime;
           console.log(`Search completed in ${searchTime}ms for query: ${query}`);
           
+          // Add detailed logging of search results
+          console.log(`\n==== SEARCH RESULTS (${searchResponse.results.length}) ====`);
+          searchResponse.results.forEach((result, idx) => {
+            console.log(`\nRESULT #${idx + 1}:`);
+            console.log(`Title: ${result.title}`);
+            console.log(`Subreddit: ${result.subreddit}`);
+            console.log(`Author: ${result.author}`);
+            console.log(`Similarity: ${result.similarity}`);
+            console.log(`Match Type: ${result.match_type}`);
+            console.log(`Content (first 100 chars): ${(result.content_snippet || result.content || '').substring(0, 100)}...`);
+          });
+          console.log(`\n==== END SEARCH RESULTS ====\n`);
+          
           // Check if any results used fallback search and log it
           const usedFallback = searchResponse.results.some(r => r.metadata?.search_fallback === true);
           if (usedFallback) {
@@ -99,6 +112,11 @@ export async function POST(req: Request) {
             searchResponse.results,
             query
           );
+          
+          // Log a sample of formatted content to verify full content is used
+          console.log('Formatted content sample for Anthropic (first result):');
+          const firstResultSample = formattedSearchContent.split('[Result 1]')[1]?.split('[Result 2]')[0];
+          console.log(firstResultSample || 'No results');
           
           // Get system prompt
           const systemPrompt = getSearchSynthesisPrompt(promptVersion as any);
@@ -385,8 +403,75 @@ export async function OPTIONS() {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-    }
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+    },
   });
+}
+
+/**
+ * Diagnostic endpoint to check what payload is being sent to Anthropic
+ * This is for debugging purposes only
+ */
+export async function GET(req: Request) {
+  try {
+    // Get the query from URL params
+    const url = new URL(req.url);
+    const query = url.searchParams.get('query') || 'test query';
+    
+    // Execute search
+    const searchResponse = await performFullSearch({
+      query,
+      maxResults: 5,
+      includeAnalysis: true,
+      skipCache: true,
+      vectorWeight: 0.7,
+      textWeight: 0.3,
+      efSearch: 300,
+      similarityThreshold: 0.6
+    });
+    
+    // Format search results for LLM
+    const formattedSearchContent = formatSearchResultsForLLM(
+      searchResponse.results,
+      query
+    );
+    
+    // Get system prompt
+    const systemPrompt = getSearchSynthesisPrompt('default');
+    
+    // Create sample request body
+    const requestBody = {
+      model: 'claude-3-5-haiku-20241022',
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: formattedSearchContent }
+      ],
+      max_tokens: 4000,
+      temperature: 0.7,
+      stream: true
+    };
+    
+    // Return the payload that would be sent to Anthropic
+    return new Response(JSON.stringify({
+      requestBody,
+      searchResultsCount: searchResponse.results.length,
+      formattedContentSample: formattedSearchContent.substring(0, 1000) + '...',
+      fullContent: formattedSearchContent
+    }, null, 2), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  } catch (error) {
+    console.error('Diagnostic endpoint error:', error);
+    return new Response(JSON.stringify({ error: String(error) }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
 } 

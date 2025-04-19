@@ -1,0 +1,60 @@
+
+# Integration Plan for New Design
+
+Based on my analysis of both the existing codebase and the new design document, here's a step-by-step plan to integrate the new visual style without changing backend functionality:
+
+## 1. Update Dependencies & Configuration
+
+```bash
+npm install lucide-react
+npm install tailwindcss-animate -D
+```
+
+## 2. Update Tailwind Configuration
+
+- Update `tailwind.config.ts` with the new theme configuration from the implementation document
+- Add the new colors, animations, and design elements from the futuristic/Y2K palette
+
+## 3. Update Global CSS
+
+- Update `app/globals.css` with the new CSS variables and component styles
+- Ensure we keep current component styles that might be used elsewhere in the app
+
+## 4. Component Updates (Phased Approach)
+
+### Phase 1: Core UI Components
+1. Update/Replace `components/search-bar.tsx` with the new design
+2. Update/Replace `components/result-card.tsx` with the new design
+3. Update/Replace `components/streaming-results.tsx` with the new design
+
+### Phase 2: New Components
+1. Create `components/location-selector.tsx` (new component)
+2. Create `components/scrolling-banner.tsx` (new component)
+
+### Phase 3: Main Page Update
+1. Update `app/page.tsx` to incorporate new components while keeping existing functionality
+   - Maintain both traditional search and AI streaming search
+   - Add location selector to the UI
+   - Implement scrolling banner if needed
+
+## 5. Hook/Logic Integration
+
+- Keep existing hooks and logic for search (`useStreamingSearch`)
+- Keep existing API calls to `/api/search` and `/api/streaming-search`
+- Integrate the new UI without changing the data flow
+
+## 6. Testing Plan
+
+1. Test core components in isolation
+2. Test traditional search functionality with new UI
+3. Test AI streaming search with new UI
+4. Test responsive design across different screen sizes
+5. Test accessibility of new components
+
+## 7. Migration Considerations
+
+- Consider implementing feature flags if a gradual rollout is needed
+- Maintain backward compatibility for any third-party integrations
+- Document any API changes needed for the frontend (even if backend remains unchanged)
+
+This plan allows for a phased implementation of the new design while ensuring the backend functionality remains intact. Would you like me to elaborate on any specific part of this plan?

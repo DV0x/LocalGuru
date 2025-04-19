@@ -22,7 +22,7 @@ Search Results:
 ${results.map((result, index) => `
 [Result ${index + 1}]
 Title: ${result.title}
-Content: ${truncateContent(result.content_snippet || result.content, 300)}
+Content: ${result.content}
 URL: ${result.url || 'N/A'}
 Subreddit: ${result.subreddit || 'N/A'}
 Author: ${result.author || 'N/A'}

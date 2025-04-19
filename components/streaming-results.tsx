@@ -105,10 +105,10 @@ export function StreamingResults({
               </div>
             )}
             <div className="prose prose-lg max-w-none text-black">
-              <MarkdownRenderer 
-                content={content}
-                searchResults={searchResults}
-              />
+                <MarkdownRenderer 
+                  content={content}
+                  searchResults={searchResults}
+                />
             </div>
           </>
         ) : (

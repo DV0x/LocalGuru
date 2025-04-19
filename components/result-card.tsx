@@ -63,14 +63,14 @@ export function ResultCard({ recommendation, onFeedback }: ResultCardProps) {
               MATCH
             </div>
           </div>
-        )}
-      </div>
+          )}
+        </div>
 
       <div className="flex items-center text-sm mb-3">
         <MapPin size={16} className="mr-1" />
         <span>{location}</span>
-      </div>
-
+        </div>
+        
       <p className="mb-4 whitespace-pre-line">{formattedDescription}</p>
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -78,8 +78,8 @@ export function ResultCard({ recommendation, onFeedback }: ResultCardProps) {
           <span key={category} className={`category-tag ${getCategoryColor(category)} ${getTextColor(category)}`}>
             {category}
           </span>
-        ))}
-      </div>
+          ))}
+        </div>
 
       <div className="flex justify-between items-center pt-2 border-t border-gray-200">
         <div className="text-sm">
@@ -87,9 +87,9 @@ export function ResultCard({ recommendation, onFeedback }: ResultCardProps) {
             <div className="flex items-center">
               <span>Source: {source}</span>
               {sourceUrl && (
-                <a
-                  href={sourceUrl}
-                  target="_blank"
+                <a 
+                  href={sourceUrl} 
+                  target="_blank" 
                   rel="noopener noreferrer"
                   className="ml-1 inline-flex items-center hover:underline"
                 >
@@ -105,14 +105,14 @@ export function ResultCard({ recommendation, onFeedback }: ResultCardProps) {
           <div className="flex items-center gap-2">
             <button 
               className="p-1 hover:bg-gray-100 rounded-full" 
-              onClick={() => onFeedback(id, true)} 
+              onClick={() => onFeedback(id, true)}
               aria-label="Helpful"
             >
               <ThumbsUp size={18} />
             </button>
             <button 
               className="p-1 hover:bg-gray-100 rounded-full" 
-              onClick={() => onFeedback(id, false)} 
+              onClick={() => onFeedback(id, false)}
               aria-label="Not helpful"
             >
               <ThumbsDown size={18} />

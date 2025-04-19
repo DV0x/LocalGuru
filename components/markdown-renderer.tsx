@@ -183,9 +183,9 @@ export function MarkdownRenderer({
             <blockquote {...props} className="border-l-4 border-indigo-500 pl-4 italic my-4 text-black" />
           ),
           a: ({ node, ...props }) => {
-            return (
-              <a
-                {...props}
+              return (
+                  <a
+                    {...props}
                 className="font-medium text-indigo-600 hover:text-indigo-800 underline"
               />
             );
