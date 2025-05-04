@@ -2,12 +2,14 @@ import { NextRequest } from 'next/server';
 import { generateEmbeddings } from '@/app/lib/search/query-processor';
 import { successResponse, errorResponse } from '@/app/lib/utils/api-response';
 import { handleApiError, logApiError } from '@/app/lib/utils/error-handling';
+import { withApiKeyValidation } from '@/app/lib/utils/api-key-middleware';
 
 /**
  * API route for generating embeddings for search queries
  * Proxies requests to the Supabase edge function securely
+ * Protected by API key validation
  */
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
     // Parse request body
     const body = await request.json().catch(() => ({}));
@@ -41,6 +43,11 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Wrap the handler with API key validation middleware
+ */
+export const POST = withApiKeyValidation(handler);
+
+/**
  * Handle OPTIONS requests for CORS preflight
  */
 export async function OPTIONS() {
@@ -49,7 +56,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key'
     }
   });
 } 

@@ -3,6 +3,11 @@ import { QueryAnalysisResult, EmbeddingResult, SearchResult } from '../supabase/
 import { ApiError } from '../utils/error-handling';
 import { SearchOptions } from './types';
 
+// TEMPORARY FIX: Hardcoded API key from .env.local
+// In production, use a more secure approach or environment variables
+// This is only a temporary workaround for the environment variable issue
+const OPENAI_API_KEY = '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';
+
 // Define CommentSearchResult type that matches SearchResult structure
 export interface CommentSearchResult {
   id: string;
@@ -56,7 +61,7 @@ const MAX_CACHE_SIZE = 100; // Maximum number of entries to prevent memory leaks
  * Creates a cache key from search options
  */
 function createCacheKey(options: SearchOptions): string {
-  return `${options.query.toLowerCase()}_${options.maxResults || 20}_${options.similarityThreshold || 0.6}_${options.vectorWeight || 0.7}_${options.textWeight || 0.3}_${options.efSearch || 100}`;
+  return `${options.query.toLowerCase()}_${options.defaultLocation || ''}_${options.maxResults || 50}_${options.similarityThreshold || 0.6}_${options.vectorWeight || 0.7}_${options.textWeight || 0.3}_${options.efSearch || 100}`;
 }
 
 /**
@@ -103,12 +108,18 @@ interface CommentSearchDatabaseResult {
 /**
  * Analyzes a search query to extract intent, entities, topics, and locations
  * @param query The user's search query
+ * @param defaultLocation Optional default location from the location selector
  * @returns Structured analysis of the query
  */
-export async function analyzeQuery(query: string): Promise<QueryAnalysisResult> {
+export async function analyzeQuery(query: string, defaultLocation?: string): Promise<QueryAnalysisResult> {
   try {
+    console.log(`Analyzing query: "${query}" ${defaultLocation ? `(default: ${defaultLocation})` : ''}`);
+    
     const { data, error } = await supabaseAdmin.functions.invoke('query-analysis', {
-      body: { query }
+      body: { 
+        query,
+        defaultLocation  // Pass default location to edge function
+      }
     });
     
     if (error) {
@@ -118,6 +129,9 @@ export async function analyzeQuery(query: string): Promise<QueryAnalysisResult> 
     if (!data) {
       throw new ApiError('No analysis data returned', 500);
     }
+    
+    // Log the analysis results concisely
+    console.log(`Intent: ${data.intent}, Topics: ${data.topics?.join(', ') || 'none'}, Locations: ${data.locations?.join(', ') || 'none'}`);
     
     return data as QueryAnalysisResult;
   } catch (error) {
@@ -169,14 +183,15 @@ export async function generateEmbeddingsWithFallback(query: string): Promise<Emb
   } catch (error) {
     console.warn("Edge function embedding generation failed, using fallback:", error);
     
-    // Check if we have an OpenAI API key for direct fallback
-    const openaiApiKey = process.env.OPENAI_API_KEY;
+    // Use our hardcoded API key instead of relying on process.env
+    const openaiApiKey = OPENAI_API_KEY || process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
       console.error("No OpenAI API key available for fallback embedding generation");
       throw new ApiError('Embedding generation failed and no fallback available', 500);
     }
     
     try {
+      console.log('Using direct API key for OpenAI embeddings');
       // Fall back to direct embedding API call
       const response = await fetch("https://api.openai.com/v1/embeddings", {
         method: "POST",
@@ -224,25 +239,14 @@ export async function executeSearch(
   queryIntent: string = 'general',
   queryTopics: string[] | null = null,
   queryLocations: string[] | null = null,
-  maxResults: number = 20,
+  maxResults: number = 50,
   matchThreshold: number = 0.6,
   vectorWeight: number = 0.7,
   textWeight: number = 0.3,
   efSearch: number = 200
 ): Promise<CommentSearchResult[]> {
   try {
-    console.log('Executing comment-only search with parameters:', {
-      query,
-      embeddingLength: queryEmbedding?.length || 0,
-      intent: queryIntent,
-      topics: queryTopics,
-      locations: queryLocations,
-      maxResults,
-      matchThreshold,
-      vectorWeight,
-      textWeight,
-      efSearch
-    });
+    console.log(`Search params: intent=${queryIntent}, topics=${queryTopics?.length || 0}, locations=${queryLocations?.join(', ') || 'none'}`);
     
     const startTime = Date.now();
     
@@ -270,11 +274,8 @@ export async function executeSearch(
 
     // Check if search timed out and fell back to text search
     const timedOut = data?.some((item: CommentSearchDatabaseResult) => item.timed_out);
-    if (timedOut) {
-      console.log(`Comment search timed out and fell back to text search. Completed in ${endTime - startTime}ms for query "${query}" with ${data?.length || 0} results`);
-    } else {
-      console.log(`Comment search completed in ${endTime - startTime}ms for query "${query}" with ${data?.length || 0} results`);
-    }
+    
+    console.log(`Search completed in ${endTime - startTime}ms: ${data?.length || 0} results ${timedOut ? '(fallback)' : ''}`);
     
     // Transform the raw comment results to match SearchResult format
     const formattedResults = data?.map((item: CommentSearchDatabaseResult) => {
@@ -323,7 +324,8 @@ export async function executeSearch(
 export async function performFullSearch(options: SearchOptions) {
   const { 
     query, 
-    maxResults = 20, 
+    defaultLocation,
+    maxResults = 50,
     includeAnalysis = true,
     similarityThreshold = 0.6,
     subreddits = [],
@@ -361,7 +363,7 @@ export async function performFullSearch(options: SearchOptions) {
   try {
     // Use Promise.race to handle potential timeouts in any of the steps
     // Start both analysis and embedding generation concurrently
-    const analysisPromise = analyzeQuery(query);
+    const analysisPromise = analyzeQuery(query, defaultLocation);
     const embeddingsPromise = generateEmbeddingsWithFallback(query);
     
     // Wait for both promises with timeout
@@ -442,5 +444,57 @@ export async function performFullSearch(options: SearchOptions) {
     
     // For other errors, just re-throw
     throw error;
+  }
+}
+
+/**
+ * Logs search performance data to the search_performance_logs table
+ * @param queryData Information about the search query and performance
+ */
+export async function logSearchPerformance({
+  query,
+  intent,
+  vectorWeight,
+  textWeight,
+  efSearch,
+  durationMs,
+  resultCount,
+  timedOut,
+  errorMessage = null,
+  source = 'streaming-search'
+}: {
+  query: string;
+  intent: string;
+  vectorWeight: number;
+  textWeight: number;
+  efSearch: number;
+  durationMs: number;
+  resultCount: number;
+  timedOut: boolean;
+  errorMessage?: string | null;
+  source?: string;
+}) {
+  try {
+    const { error } = await supabaseAdmin
+      .from('search_performance_logs')
+      .insert({
+        query,
+        intent,
+        vector_weight: vectorWeight,
+        text_weight: textWeight,
+        ef_search: efSearch,
+        duration_ms: durationMs,
+        result_count: resultCount,
+        timed_out: timedOut,
+        error_message: errorMessage,
+        source
+      });
+
+    if (error) {
+      console.error('Failed to log search performance:', error);
+    }
+  } catch (err) {
+    console.error('Error logging search performance:', err);
+    // Don't throw error since this is non-critical functionality
   }
 } 

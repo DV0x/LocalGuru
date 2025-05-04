@@ -217,3 +217,43 @@ For detailed test results and analysis, see `tests/intent_detection_summary.md`.
 ## License
 
 This project is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+
+# Query Analysis Fix
+
+## Issue Identified
+The Supabase Edge Function 'query-analysis' was failing because it was trying to call a non-existent database function:
+
+```
+Error: Could not find the function public.search_opt.store_query_analysis(p_enhanced_queries, p_entities, p_intent, p_locations, p_query, p_topics, p_user_id) in the schema cache
+```
+
+## Fix Applied
+I've updated the Edge Function to call the correct database function:
+```typescript
+// Changed from
+'search_opt.store_query_analysis'
+// To
+'query_analysis'
+```
+
+## Deploy Instructions
+To deploy the fixed edge function:
+
+1. Make sure Docker Desktop is running (required for Supabase CLI)
+2. Run:
+```bash
+npx supabase functions deploy query-analysis
+```
+
+If Docker issues persist, you can manually update the Edge Function through the Supabase Dashboard:
+1. Go to your Supabase project dashboard
+2. Navigate to Edge Functions
+3. Edit the 'query-analysis' function
+4. Replace 'search_opt.store_query_analysis' with 'query_analysis'
+5. Save and deploy
+
+## Additional Troubleshooting
+If you continue to experience issues:
+1. Check the Edge Function logs in the Supabase Dashboard
+2. Verify that your OpenAI API key is valid
+3. Make sure all required environment variables are set correctly

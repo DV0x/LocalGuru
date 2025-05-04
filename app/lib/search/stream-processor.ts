@@ -15,12 +15,18 @@ export function formatSearchResultsForLLM(
   results: SearchResult[] | CommentSearchResult[],
   query: string
 ): string {
-  return `
-Query: "${query}"
-
-Search Results:
-${results.map((result, index) => `
-[Result ${index + 1}]
+  // Simplified approach that just provides clean results without categories or instructions
+  // The new prompt expects raw data and has its own categorization process
+  
+  // Create a clean header with just the query
+  const header = `Here are search results for your query: "${query}"\n`;
+  
+  // Format each result with a consistent structure
+  const formattedResults = results.map((result, index) => {
+    const resultNumber = index + 1;
+    
+    return `
+[Result ${resultNumber}]
 Title: ${result.title}
 Content: ${result.content}
 URL: ${result.url || 'N/A'}
@@ -28,14 +34,12 @@ Subreddit: ${result.subreddit || 'N/A'}
 Author: ${result.author || 'N/A'}
 Created: ${formatDate(result.created_at)}
 Similarity: ${result.similarity ? Math.round(result.similarity * 100) / 100 : 'N/A'}
-${result.metadata ? `Topics: ${JSON.stringify(result.metadata.topics || [])}` : ''}
-${result.metadata ? `Locations: ${JSON.stringify(result.metadata.locations || [])}` : ''}
-${result.metadata?.thread_context?.postTitle ? `Original Post Title: ${result.metadata.thread_context.postTitle}` : ''}
-`).join('\n')}
-
-Based on these search results, provide a comprehensive answer to the query: "${query}"
-Use citations like [1], [2], etc. to reference specific results.
-`;
+${result.metadata?.topics?.length ? `Topics: ${JSON.stringify(result.metadata.topics)}` : ''}
+${result.metadata?.locations?.length ? `Locations: ${JSON.stringify(result.metadata.locations)}` : ''}
+${result.metadata?.thread_context?.postTitle ? `Original Post Title: ${result.metadata.thread_context.postTitle}` : ''}`;
+  }).join('\n');
+  
+  return header + formattedResults;
 }
 
 /**

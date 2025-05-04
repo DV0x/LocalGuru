@@ -4,6 +4,13 @@ import OpenAI from 'npm:openai@4.20.1';
 import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// Add debug logging for environment variables
+console.log("DEBUG: Environment check");
+console.log("SUPABASE_URL present:", !!Deno.env.get('SUPABASE_URL'));
+console.log("SUPABASE_SERVICE_ROLE_KEY present:", !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+console.log("OPENAI_API_KEY present:", !!Deno.env.get('OPENAI_API_KEY'));
+console.log("CUSTOM_SUPABASE_URL present:", !!Deno.env.get('CUSTOM_SUPABASE_URL'));
+
 /**
  * QUERY EMBEDDINGS EDGE FUNCTION
  * 
@@ -31,7 +38,7 @@ interface EmbeddingResponse {
 }
 
 // Initialize Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+const supabaseUrl = Deno.env.get('CUSTOM_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || '';
 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 

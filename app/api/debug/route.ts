@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase/client-server';
+import { withApiKeyValidation } from '@/app/lib/utils/api-key-middleware';
 
 /**
  * Debug endpoint for checking database content and representations
+ * Protected by API key validation
  */
-export async function GET(request: NextRequest) {
+async function handler(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const contentType = searchParams.get('type') || 'contentSummary';
   
@@ -155,6 +157,11 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+/**
+ * Wrap the handler with API key validation middleware
+ */
+export const GET = withApiKeyValidation(handler);
 
 // Create RPC function for embedding statistics
 /*

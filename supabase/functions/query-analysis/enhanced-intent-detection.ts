@@ -2,6 +2,9 @@
 // This module enhances the query analysis to better detect social connection queries
 // and classify them as "how_to" intent for more relevant search results.
 
+// Define the QueryIntent type directly to avoid circular imports
+export type QueryIntent = 'recommendation' | 'information' | 'comparison' | 'experience' | 'local_events' | 'how_to' | 'discovery' | 'general';
+
 // Define the patterns that indicate a social connection query
 const SOCIAL_CONNECTION_PATTERNS = [
   'meet people', 'meeting people',
@@ -17,10 +20,10 @@ const SOCIAL_CONNECTION_PATTERNS = [
 // Interface for query analysis result
 interface QueryAnalysisResult {
   id?: string | null;
-  intent: string;
+  intent: QueryIntent; // Using the locally defined QueryIntent type
   topics: string[];
   locations: string[];
-  entities: Record<string, any>;
+  entities: Record<string, string[]>;
 }
 
 /**

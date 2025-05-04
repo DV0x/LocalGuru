@@ -1,11 +1,20 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+// Update OpenAI import to match working example
 import OpenAI from 'npm:openai@4.28.0';
-// Import our social connection intent enhancement
-import { enhanceIntentDetection } from './enhanced-intent-detection.ts';
+// Import our social connection intent enhancement and the QueryIntent type
+import { enhanceIntentDetection, QueryIntent } from './enhanced-intent-detection.ts';
+
+// Add debug logging for environment variables
+console.log("DEBUG: Query Analysis Environment check");
+console.log("SUPABASE_URL present:", !!Deno.env.get('SUPABASE_URL'));
+console.log("SUPABASE_SERVICE_ROLE_KEY present:", !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+console.log("OPENAI_API_KEY present:", !!Deno.env.get('OPENAI_API_KEY'));
+console.log("CUSTOM_SUPABASE_URL present:", !!Deno.env.get('CUSTOM_SUPABASE_URL'));
 
 // Types for query analysis
-export type QueryIntent = 'recommendation' | 'information' | 'comparison' | 'experience' | 'local_events' | 'how_to' | 'discovery' | 'general';
+// Use the QueryIntent type imported from enhanced-intent-detection.ts
+// export type QueryIntent = 'recommendation' | 'information' | 'comparison' | 'experience' | 'local_events' | 'how_to' | 'discovery' | 'general';
 
 interface QueryAnalysisResult {
   entities: Record<string, string[]>;
@@ -23,7 +32,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { query, userId } = await req.json();
+    const { query, userId, defaultLocation } = await req.json();
     
     if (!query || typeof query !== 'string') {
       return new Response(
@@ -34,16 +43,34 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+    
+    // Log the request for debugging
+    console.log(`Query: "${query}"${defaultLocation ? `, Default: ${defaultLocation}` : ''}`);
 
     // Create Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseUrl = Deno.env.get('CUSTOM_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
-    // Create OpenAI client
-    const openai = new OpenAI({
-      apiKey: Deno.env.get('OPENAI_API_KEY') ?? '',
-    });
+    // Create OpenAI client with proper error handling
+    let openai;
+    try {
+      openai = new OpenAI({
+        apiKey: Deno.env.get('OPENAI_API_KEY') ?? '',
+      });
+    } catch (error) {
+      console.error('Error initializing OpenAI client:', error);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Error initializing OpenAI client', 
+          details: error instanceof Error ? error.message : String(error) 
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
 
     // Analyze query
     const rawQueryAnalysis = await analyzeQuery(query, openai);
@@ -51,9 +78,14 @@ Deno.serve(async (req: Request) => {
     // Enhance the analysis with additional processing
     const queryAnalysis = enhanceQueryAnalysis(rawQueryAnalysis, query);
     
+    // Handle the default location integration
+    if (defaultLocation) {
+      handleDefaultLocation(queryAnalysis, defaultLocation);
+    }
+    
     // Store the analysis in the database
     const { data: analysisId, error: storeError } = await supabaseClient.rpc(
-      'search_opt.store_query_analysis',
+      'query_analysis',
       {
         p_query: query,
         p_entities: queryAnalysis.entities,
@@ -79,11 +111,14 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error processing query analysis:', error);
     
     return new Response(
-      JSON.stringify({ error: 'Error processing query analysis', details: error.message }),
+      JSON.stringify({ 
+        error: 'Error processing query analysis', 
+        details: error instanceof Error ? error.message : String(error) 
+      }),
       { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -334,4 +369,41 @@ function normalizeLocation(location: string): string {
 
   // Return the mapped value if exists, otherwise return the original
   return locationMap[location.toLowerCase()] || location;
+}
+
+/**
+ * Handles the integration of the default location with query locations
+ * Uses the internal QueryAnalysisResult type for compatibility
+ */
+function handleDefaultLocation(analysis: {
+  entities: Record<string, string[]>;
+  topics: string[];
+  locations: string[];
+  intent: QueryIntent;
+}, defaultLocation: string): void {
+  // If no locations found in query, use the default location
+  if (analysis.locations.length === 0) {
+    console.log(`No locations in query, using default: ${defaultLocation}`);
+    analysis.locations = [defaultLocation];
+    return;
+  }
+  
+  // Normalize locations for comparison
+  const normalizedDefault = normalizeLocation(defaultLocation);
+  const queryLocationsNormalized = analysis.locations.map(loc => normalizeLocation(loc));
+  
+  // Check if default location is already in the locations list or is a parent location
+  const isRedundant = queryLocationsNormalized.some(loc => 
+    loc === normalizedDefault ||
+    normalizedDefault.includes(loc) ||
+    loc.includes(normalizedDefault)
+  );
+  
+  if (!isRedundant) {
+    // Add default location as a secondary location for context
+    analysis.locations.push(defaultLocation);
+    console.log(`Added location context: ${defaultLocation}`);
+  } else {
+    console.log(`Default location redundant with: ${analysis.locations.join(', ')}`);
+  }
 } 

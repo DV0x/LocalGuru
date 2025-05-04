@@ -31,13 +31,15 @@ export async function POST(request: NextRequest) {
     // Create search options from request with new hybrid search parameters
     const options: SearchOptions = {
       query: body.query,
-      maxResults: body.maxResults || 20,
+      maxResults: body.maxResults || 50,
       includeAnalysis: body.includeAnalysis !== false, // Default to true
       similarityThreshold: body.similarityThreshold || 0.6,
       subreddits: body.subreddits,
       useMetadataBoost: body.useMetadataBoost !== false, // Default to true
       useFallback: body.useFallback !== false, // Default to true
       skipCache: body.skipCache === true, // Default to false (use cache)
+      // Add defaultLocation parameter
+      defaultLocation: body.defaultLocation,
       // New parameters for hybrid search
       vectorWeight: body.vectorWeight || 0.7,    // Weight for vector similarity 
       textWeight: body.textWeight || 0.3,        // Weight for text search
@@ -48,6 +50,7 @@ export async function POST(request: NextRequest) {
     console.log('Search request:', { 
       query: options.query,
       maxResults: options.maxResults,
+      defaultLocation: options.defaultLocation || 'none',
       timestamp: new Date().toISOString(),
       // Log hybrid search parameters
       vectorWeight: options.vectorWeight,

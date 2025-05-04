@@ -1,7 +1,9 @@
 import { getSearchSynthesisPrompt } from '@/app/lib/prompts/search-synthesis-prompt';
-import { performFullSearch } from '@/app/lib/search/query-processor';
+import { performFullSearch, logSearchPerformance } from '@/app/lib/search/query-processor';
 import { formatSearchResultsForLLM, formatResultForClient } from '@/app/lib/search/stream-processor';
 import { StreamingStatus } from '@/app/lib/search/streaming-types';
+import { streamingSearchSchema, type StreamingSearchRequest } from '@/app/lib/validators/schemas';
+import { validateRequestBody } from '@/app/lib/validators/validate-request';
 
 /**
  * Configure this route to use Edge Runtime for optimal performance
@@ -15,23 +17,39 @@ export const preferredRegion = 'auto';
  */
 export async function POST(req: Request) {
   try {
-    // Parse request with new hybrid search parameters
-    const { 
-      query, 
-      maxResults = 20, 
-      skipCache = false, 
-      promptVersion = 'default',
-      vectorWeight = 0.7,     // New parameter for hybrid search
-      textWeight = 0.3,       // New parameter for hybrid search
-      efSearch = 300          // Increase from 100 to 300
-    } = await req.json();
+    // Parse the request body
+    const body = await req.json().catch(() => ({}));
     
-    if (!query || typeof query !== 'string') {
+    // Validate the request body using Zod
+    const validation = await validateRequestBody(body, streamingSearchSchema);
+    
+    if (!validation.success) {
       return new Response(
-        JSON.stringify({ error: 'Query is required and must be a string' }),
+        JSON.stringify({ error: validation.error }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
+    
+    // Use the validated data with proper types
+    const {
+      query,
+      defaultLocation,
+      maxResults,
+      skipCache,
+      promptVersion,
+      vectorWeight,
+      textWeight,
+      efSearch
+    } = validation.data;
+    
+    // Log the request parameters
+    console.log('Search request:', { 
+      query, 
+      defaultLocation: defaultLocation || 'none', 
+      maxResults,
+      vectorWeight,
+      textWeight
+    });
     
     // Create encoder for text streaming
     const encoder = new TextEncoder();
@@ -39,7 +57,26 @@ export async function POST(req: Request) {
     // Create readable stream
     const stream = new ReadableStream({
       async start(controller) {
+        // Flag to track if the request has been aborted
+        let isAborted = false;
+        
+        // Create an AbortController for Anthropic API calls
+        const anthropicController = new AbortController();
+        
         try {
+          // Setup abort handler for client disconnection
+          const abortListener = () => {
+            console.log('Client aborted the request, cleaning up resources');
+            isAborted = true;
+            // Abort any ongoing Anthropic API requests
+            anthropicController.abort();
+            // Close the stream gracefully
+            controller.close();
+          };
+          
+          // Listen for abort event
+          req.signal.addEventListener('abort', abortListener);
+          
           // Send initial status
           controller.enqueue(encoder.encode(JSON.stringify({ 
             type: 'status', 
@@ -57,15 +94,16 @@ export async function POST(req: Request) {
             timestamp: Date.now()
           }) + '\n'));
           
-          // Execute search with hybrid search parameters
+          // Execute search with validated parameters
           const searchResponse = await performFullSearch({
             query,
-            maxResults: maxResults,
+            defaultLocation,
+            maxResults,
             includeAnalysis: true,
-            skipCache: skipCache,
-            vectorWeight: vectorWeight,
-            textWeight: textWeight,
-            efSearch: 300,
+            skipCache,
+            vectorWeight,
+            textWeight,
+            efSearch,
             similarityThreshold: 0.6
           });
           
@@ -73,30 +111,32 @@ export async function POST(req: Request) {
           const searchTime = Date.now() - startTime;
           console.log(`Search completed in ${searchTime}ms for query: ${query}`);
           
-          // Add detailed logging of search results
-          console.log(`\n==== SEARCH RESULTS (${searchResponse.results.length}) ====`);
-          searchResponse.results.forEach((result, idx) => {
-            console.log(`\nRESULT #${idx + 1}:`);
-            console.log(`Title: ${result.title}`);
-            console.log(`Subreddit: ${result.subreddit}`);
-            console.log(`Author: ${result.author}`);
-            console.log(`Similarity: ${result.similarity}`);
-            console.log(`Match Type: ${result.match_type}`);
-            console.log(`Content (first 100 chars): ${(result.content_snippet || result.content || '').substring(0, 100)}...`);
-          });
-          console.log(`\n==== END SEARCH RESULTS ====\n`);
+          // Replace detailed logging with a summary
+          console.log(`Search results: ${searchResponse.results.length} items found`);
+          console.log(`Locations: ${searchResponse.analysis?.locations?.join(', ') || 'none'}`);
           
           // Check if any results used fallback search and log it
           const usedFallback = searchResponse.results.some(r => r.metadata?.search_fallback === true);
           if (usedFallback) {
             console.log(`⚠️ FALLBACK: Query "${query}" used text search fallback (vector search timed out)`);
-          } else {
-            console.log(`✅ VECTOR: Query "${query}" successfully used vector search`);
           }
           
-          // Log result match types for debugging
+          // Log match types for debugging (more concise)
           const matchTypes = searchResponse.results.map(r => r.match_type).filter((v, i, a) => a.indexOf(v) === i);
-          console.log(`Match types in results: ${matchTypes.join(', ')}`);
+          console.log(`Match types: ${matchTypes.join(', ')}`);
+          
+          // Log search performance data
+          await logSearchPerformance({
+            query,
+            intent: searchResponse.analysis?.intent || 'unknown',
+            vectorWeight: vectorWeight || 0.7,
+            textWeight: textWeight || 0.3,
+            efSearch: efSearch || 300,
+            durationMs: searchTime,
+            resultCount: searchResponse.results.length,
+            timedOut: usedFallback,
+            source: 'streaming-search'
+          });
           
           // Send search complete status
           controller.enqueue(encoder.encode(JSON.stringify({ 
@@ -113,13 +153,16 @@ export async function POST(req: Request) {
             query
           );
           
-          // Log a sample of formatted content to verify full content is used
-          console.log('Formatted content sample for Anthropic (first result):');
-          const firstResultSample = formattedSearchContent.split('[Result 1]')[1]?.split('[Result 2]')[0];
-          console.log(firstResultSample || 'No results');
+          // Log a single line for formatted content instead of the content itself
+          console.log('Formatted content for Anthropic (length):', formattedSearchContent.length);
           
-          // Get system prompt
-          const systemPrompt = getSearchSynthesisPrompt(promptVersion as any);
+          // Get system prompt with enhanced parameters
+          const systemPrompt = getSearchSynthesisPrompt(
+            promptVersion as any,
+            searchResponse.analysis, // Still pass analysis for other prompt types
+            searchResponse.results.length, // Pass total results count
+            query // Pass the original user query
+          );
           
           // Send generating status
           controller.enqueue(encoder.encode(JSON.stringify({ 
@@ -138,11 +181,12 @@ export async function POST(req: Request) {
             query,
             analysis: searchResponse.analysis,
             searchTime,
-            totalResults: searchResponse.results.length
+            totalResults: searchResponse.results.length,
+            defaultLocation // Include the defaultLocation in metadata
           });
           
           // Send early metadata before AI processing starts
-          console.log(`Sending early metadata with ${clientResults.length} search results`);
+          console.log(`Sending metadata with ${clientResults.length} search results`);
           controller.enqueue(encoder.encode('METADATA:' + earlyMetadataJson + '\n'));
           
           // DIRECT API CALL to Anthropic
@@ -152,18 +196,21 @@ export async function POST(req: Request) {
             throw new Error('Anthropic API key not configured');
           }
           
-          console.log('Making direct API call to Anthropic...', query);
+          console.log('Making API call to Anthropic for query:', query);
           console.log('Anthropic API Key (first 4 chars):', apiKey.substring(0, 4));
+          
+          // Use the enhanced system prompt directly without additional instructions
+          const oneStepSystemPrompt = systemPrompt;
           
           // Try with the exact Claude API parameters
           const requestBody = {
             model: 'claude-3-5-haiku-20241022',
-            system: systemPrompt,
+            system: oneStepSystemPrompt,
             messages: [
               { role: 'user', content: formattedSearchContent }
             ],
             max_tokens: 4000,
-            temperature: 0.7,
+            temperature: 0.2, // Low temperature for more comprehensive coverage as recommended
             stream: true
           };
           
@@ -201,6 +248,12 @@ export async function POST(req: Request) {
                 await sleep(totalDelay);
               }
               
+              // Check if the request has been aborted before making the API call
+              if (isAborted) {
+                console.log('Request was aborted, skipping Anthropic API call');
+                break;
+              }
+              
               response = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -208,7 +261,8 @@ export async function POST(req: Request) {
                   'x-api-key': apiKey,
                   'anthropic-version': '2023-06-01'
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: anthropicController.signal // Add abort signal
               });
               
               // If we got a success response, break out of the retry loop
@@ -261,66 +315,85 @@ export async function POST(req: Request) {
           console.log('Starting to process Anthropic stream...');
           
           while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            // Check if the request has been aborted
+            if (isAborted) {
+              console.log('Request was aborted, stopping stream processing');
+              break;
+            }
             
-            const chunk = decoder.decode(value);
-            console.log('Received chunk:', chunk.substring(0, 50) + '...');
-            
-            const lines = chunk.split('\n').filter(line => line.trim());
-            
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
+            try {
+              console.log('Reading from Anthropic stream...');
+              const { done, value } = await reader.read();
               
-              const data = line.substring(6); // Remove 'data: ' prefix
-              if (data === '[DONE]') continue;
+              if (done) {
+                console.log('Anthropic stream complete');
+                break;
+              }
               
-              try {
-                const parsed = JSON.parse(data);
-                console.log('Parsed event type:', parsed.type);
+              const chunk = decoder.decode(value);
+              // Truncate chunk logging
+              console.log('Received chunk of', chunk.length, 'bytes');
+              
+              const lines = chunk.split('\n').filter(line => line.trim());
+              
+              // Process each line
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
                 
-                // Handle error events from Anthropic
-                if (parsed.type === 'error') {
-                  const errorDetails = parsed.error || {};
-                  console.error('Anthropic streaming error:', JSON.stringify(errorDetails));
+                const data = line.substring(6); // Remove 'data: ' prefix
+                if (data === '[DONE]') continue;
+                
+                try {
+                  const parsed = JSON.parse(data);
+                  console.log('Parsed event type:', parsed.type);
                   
-                  // Return a meaningful error to the client
-                  controller.enqueue(encoder.encode(JSON.stringify({ 
-                    type: 'status', 
-                    status: 'error' as StreamingStatus,
-                    message: `Anthropic API error: ${errorDetails.type || 'unknown'} - ${errorDetails.message || 'No details provided'}`,
-                    timestamp: Date.now()
-                  }) + '\n'));
-                  
-                  // If overloaded and no search results, provide a fallback content message
-                  if (errorDetails.type === 'overloaded_error' && clientResults.length === 0) {
+                  // Handle error events from Anthropic
+                  if (parsed.type === 'error') {
+                    const errorDetails = parsed.error || {};
+                    console.error('Anthropic streaming error:', JSON.stringify(errorDetails));
+                    
+                    // Return a meaningful error to the client
+                    controller.enqueue(encoder.encode(JSON.stringify({ 
+                      type: 'status', 
+                      status: 'error' as StreamingStatus,
+                      message: `Anthropic API error: ${errorDetails.type || 'unknown'} - ${errorDetails.message || 'No details provided'}`,
+                      timestamp: Date.now()
+                    }) + '\n'));
+                    
+                    // If overloaded and no search results, provide a fallback content message
+                    if (errorDetails.type === 'overloaded_error' && clientResults.length === 0) {
+                      controller.enqueue(encoder.encode(JSON.stringify({ 
+                        type: 'content', 
+                        content: "I apologize, but I couldn't find specific information about this query in our database, and our AI service is currently experiencing high demand. Please try a different query or try again in a few moments."
+                      }) + '\n'));
+                    }
+                    
+                    // Don't break the loop here - we might get additional events
+                  }
+                  // Handle Anthropic streaming response (Claude 3 Messages API format)
+                  else if (parsed.type === 'content_block_delta' && 
+                      parsed.delta && 
+                      parsed.delta.type === 'text_delta' && 
+                      parsed.delta.text) {
+                    // This is the main text content from Claude
+                    accumulatedText += parsed.delta.text;
+                    
+                    // Send content update with current accumulated text
                     controller.enqueue(encoder.encode(JSON.stringify({ 
                       type: 'content', 
-                      content: "I apologize, but I couldn't find specific information about this query in our database, and our AI service is currently experiencing high demand. Please try a different query or try again in a few moments."
+                      content: accumulatedText
                     }) + '\n'));
+                    
+                    console.log('Added text delta, new length:', accumulatedText.length);
                   }
-                  
-                  // Don't break the loop here - we might get additional events
+                } catch (e) {
+                  console.error('Error parsing SSE data:', e, 'Raw data:', data);
                 }
-                // Handle Anthropic streaming response (Claude 3 Messages API format)
-                else if (parsed.type === 'content_block_delta' && 
-                    parsed.delta && 
-                    parsed.delta.type === 'text_delta' && 
-                    parsed.delta.text) {
-                  // This is the main text content from Claude
-                  accumulatedText += parsed.delta.text;
-                  
-                  // Send content update with current accumulated text
-                  controller.enqueue(encoder.encode(JSON.stringify({ 
-                    type: 'content', 
-                    content: accumulatedText
-                  }) + '\n'));
-                  
-                  console.log('Added text delta, new length:', accumulatedText.length);
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e, 'Raw data:', data);
               }
+            } catch (error) {
+              console.error('Error reading from stream:', error);
+              // Break the loop if there's an error reading from the stream
+              break;
             }
           }
           
@@ -333,8 +406,7 @@ export async function POST(req: Request) {
           
           // Calculate total time
           const totalTime = Date.now() - startTime;
-          console.log(`Total request processed in ${totalTime}ms for query: ${query}`);
-          console.log(`Search: ${searchTime}ms, AI: ${totalTime - searchTime}ms`);
+          console.log(`Request processed in ${totalTime}ms (Search: ${searchTime}ms, AI: ${totalTime - searchTime}ms)`);
           
           // Add metadata
           const metadataJson = JSON.stringify({
@@ -349,9 +421,8 @@ export async function POST(req: Request) {
             model: 'claude-3-5-haiku-20241022'
           });
           
-          // Log metadata for debugging
-          console.log(`Sending metadata with ${clientResults.length} search results`);
-          console.log(`First result title: ${clientResults[0]?.title || 'No results'}`);
+          // Log metadata summary instead of details
+          console.log(`Sending final metadata with ${clientResults.length} results`);
           
           // Send metadata
           controller.enqueue(encoder.encode('METADATA:' + metadataJson + '\n'));
@@ -359,37 +430,70 @@ export async function POST(req: Request) {
           // Close stream
           controller.close();
         } catch (error) {
-          // Send error status
+          console.error('Error processing streaming search:', error);
+          
+          // Log the search error
+          await logSearchPerformance({
+            query,
+            intent: 'error', // Placeholder since we don't have analysis
+            vectorWeight: vectorWeight || 0.7,
+            textWeight: textWeight || 0.3,
+            efSearch: efSearch || 300,
+            durationMs: Date.now() - (req.headers.get('x-request-start') ? 
+              parseInt(req.headers.get('x-request-start') || '0', 10) : Date.now()),
+            resultCount: 0,
+            timedOut: false,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            source: 'streaming-search-error'
+          });
+          
+          // Send error status to client
           controller.enqueue(encoder.encode(JSON.stringify({ 
             type: 'status', 
             status: 'error' as StreamingStatus,
-            message: error instanceof Error ? error.message : 'An unexpected error occurred',
+            message: 'An error occurred during search',
             timestamp: Date.now()
           }) + '\n'));
           
-          // Close stream
+          // Close the stream
           controller.close();
-          
-          console.error('Error in streaming search:', error);
         }
       }
     });
     
-    // Return streaming response
+    // Return the stream response
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
-      }
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (error) {
-    console.error('Error in streaming search:', error);
+    console.error('Error handling streaming search request:', error);
+    
+    // Log errors that happen outside the stream processing
+    try {
+      await logSearchPerformance({
+        query: typeof error === 'object' && error !== null && 'requestBody' in error 
+          ? JSON.parse(String(error.requestBody) || '{}').query || 'unknown'
+          : 'unknown',
+        intent: 'error',
+        vectorWeight: 0.7,
+        textWeight: 0.3,
+        efSearch: 300,
+        durationMs: 0,
+        resultCount: 0,
+        timedOut: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        source: 'streaming-search-fatal'
+      });
+    } catch (logError) {
+      console.error('Failed to log search error:', logError);
+    }
+    
     return new Response(
-      JSON.stringify({ 
-        error: 'An error occurred during streaming search',
-        details: error instanceof Error ? error.message : String(error)
-      }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -438,8 +542,13 @@ export async function GET(req: Request) {
       query
     );
     
-    // Get system prompt
-    const systemPrompt = getSearchSynthesisPrompt('default');
+    // Get system prompt with enhanced parameters
+    const systemPrompt = getSearchSynthesisPrompt(
+      'localguru_v0',
+      searchResponse.analysis,
+      searchResponse.results.length,
+      query
+    );
     
     // Create sample request body
     const requestBody = {

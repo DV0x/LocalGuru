@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { csrfProtection } from './lib/utils/csrf-middleware';
 
 /**
  * In-memory cache for tracking rate limits
@@ -12,19 +13,50 @@ const API_CACHE = new Map<string, { count: number, timestamp: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute window
 const MAX_REQUESTS = parseInt(process.env.API_RATE_LIMIT || '60', 10); // 60 requests per window by default
 
+// Request size limit configuration
+const MAX_REQUEST_SIZE = parseInt(process.env.MAX_REQUEST_SIZE || '1048576', 10); // 1MB default size limit
+
 /**
  * Middleware function that provides:
  * 1. Security headers for all responses
  * 2. Rate limiting for API routes
+ * 3. Request size limiting for API routes
+ * 4. CSRF protection for state-changing API routes
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   
   // Add security headers to all responses
   addSecurityHeaders(response);
   
-  // Apply rate limiting only to API routes
+  // Apply limits only to API routes
   if (request.nextUrl.pathname.startsWith('/api/')) {
+    // Check for CSRF protection first (for state-changing methods)
+    const csrfResult = await csrfProtection(request);
+    if (csrfResult) {
+      return csrfResult; // Return if CSRF validation failed
+    }
+    
+    // Check request size limit
+    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+    
+    if (contentLength > MAX_REQUEST_SIZE) {
+      return new NextResponse(
+        JSON.stringify({ 
+          error: 'Request entity too large',
+          limit: `${MAX_REQUEST_SIZE} bytes`,
+          received: `${contentLength} bytes`
+        }),
+        {
+          status: 413, // Payload Too Large
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
+    
+    // Then apply rate limit
     return applyRateLimit(request, response);
   }
   

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MapPin, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
+import SafeHtml from "@/components/ui/safe-html";
 
 export interface TravelRecommendation {
   id: string;
@@ -71,7 +72,9 @@ export function ResultCard({ recommendation, onFeedback }: ResultCardProps) {
         <span>{location}</span>
         </div>
         
-      <p className="mb-4 whitespace-pre-line">{formattedDescription}</p>
+      <div className="mb-4">
+        <SafeHtml html={formattedDescription} />
+      </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
         {tags.map((category) => (

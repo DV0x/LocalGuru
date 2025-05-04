@@ -22,14 +22,15 @@ export interface FormattedSearchResult {
  */
 export interface SearchOptions {
   query: string;
-  maxResults?: number;
+  maxResults?: number;     // Maximum number of results to return (default 50)
   includeAnalysis?: boolean;
   similarityThreshold?: number;
   subreddits?: string[];
   useMetadataBoost?: boolean;
   useFallback?: boolean;
   skipCache?: boolean;
-  // New parameters for hybrid search
+  defaultLocation?: string; // Default location from LocationSelector
+  // Parameters for hybrid search
   vectorWeight?: number;   // Weight for vector similarity (default 0.7)
   textWeight?: number;     // Weight for text search score (default 0.3)
   efSearch?: number;       // HNSW index search parameter (default 100)

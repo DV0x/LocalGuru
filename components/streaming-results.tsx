@@ -37,6 +37,16 @@ export function StreamingResults({
     console.log('Streaming Results - searchResults:', searchResults);
   }, [searchResults]);
   
+  // Monitor status changes
+  useEffect(() => {
+    console.log('StreamingResults - status changed to:', status);
+    
+    // Extra check for stopped status
+    if (status === 'stopped') {
+      console.log('StreamingResults detected STOPPED state - should hide content:', content ? 'Yes (content exists)' : 'No (no content)');
+    }
+  }, [status, content]);
+  
   // Render status indicators based on current status
   const renderStatusIndicator = () => {
     if (status === 'initializing' || status === 'searching') {
@@ -76,6 +86,20 @@ export function StreamingResults({
       );
     }
     
+    if (status === 'stopped') {
+      return (
+        <div className="flex flex-col items-center justify-center py-8 bg-red-50 rounded-lg">
+          <div className="bg-red-500 w-10 h-10 flex items-center justify-center rounded-lg mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" />
+            </svg>
+          </div>
+          <p className="font-bold text-red-700 mb-1">Search Stopped</p>
+          <p className="text-sm text-red-600">{statusMessage || "Search was cancelled by user"}</p>
+        </div>
+      );
+    }
+    
     if (status === 'error') {
       return (
         <div className="flex flex-col items-center justify-center py-10 bg-red-50 rounded-lg">
@@ -91,7 +115,7 @@ export function StreamingResults({
   return (
     <div className="w-full mt-8 max-w-3xl mx-auto mb-8">
       <div className="neo-card p-6">
-        {content ? (
+        {content && status !== 'stopped' ? (
           <>
             {status === 'generating' && <div className="border-b border-gray-200 mb-6">{renderStatusIndicator()}</div>}
             {searchResults.length === 0 && status === 'generating' && (

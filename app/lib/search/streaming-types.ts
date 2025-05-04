@@ -11,6 +11,7 @@ export type StreamingStatus =
   | 'search_complete' // Search completed, about to generate content
   | 'generating'     // AI is generating the response
   | 'complete'       // Response generation is complete
+  | 'stopped'        // Search was manually stopped by the user
   | 'error';         // An error occurred
 
 /**

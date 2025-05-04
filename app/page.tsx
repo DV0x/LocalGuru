@@ -12,10 +12,11 @@ import { Compass } from "lucide-react";
 import { useStreamingSearch } from "@/hooks/use-streaming-search";
 
 export default function Home() {
-  const { content, searchResults, isLoading, search, status, statusMessage, setInput } = useStreamingSearch();
+  const { content, searchResults, isLoading, search, status, statusMessage, setInput, clearSearch } = useStreamingSearch();
   const [showFloatingSearch, setShowFloatingSearch] = useState(false);
   const [shouldRenderFloatingSearch, setShouldRenderFloatingSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("San Francisco");
 
   // Handle scroll to show/hide floating search bar with improved detection and throttling
   useEffect(() => {
@@ -89,10 +90,17 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [showFloatingSearch]);
 
+  const handleLocationChange = (location: string) => {
+    console.log(`Location changed to: ${location}`);
+    setSelectedLocation(location);
+  };
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (setInput) setInput(query); // Update input in the hook if available
-    search(query);
+    
+    // Pass the selected location to the search function
+    search(query, { defaultLocation: selectedLocation });
     
     // Scroll to a position where the results are visible
     const scrollTarget = document.querySelector('.neo-card');
@@ -110,28 +118,63 @@ export default function Home() {
     }
   };
 
+  const handleStopSearch = () => {
+    if (clearSearch) {
+      // Show feedback in the UI that we're stopping the search
+      console.log('Stopping search...');
+      clearSearch();
+      
+      // Keep the search query so user can refine it
+      // setSearchQuery(''); - don't clear this
+    }
+  };
+
+  const isSearching = isLoading || status === "searching" || status === "generating";
+
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b-2 border-black py-4">
-        <div className="container mx-auto px-4 flex justify-between items-center">
+      {/* Header - optimized for mobile */}
+      <header className="bg-white border-b-2 border-black py-3">
+        <div className="container mx-auto px-4 flex sm:flex-row justify-between items-center gap-2 sm:gap-0">
           <div className="flex items-center gap-2">
             <Compass className="h-6 w-6" />
             <span className="font-bold text-xl">JUSTLOCAL.AI</span>
           </div>
-          <LocationSelector />
+          <LocationSelector onLocationChange={handleLocationChange} />
         </div>
       </header>
 
       {/* Main content */}
-      <main className="flex-grow isometric-grid pt-16 pb-16">
-        <div className="container mx-auto px-4 relative z-10">
-          {/* Hero section */}
-          <div className="neo-card p-8 mb-8 max-w-4xl mx-auto">
-            <h1 className="text-5xl font-black mb-8 tracking-tight text-center">What can I help you to discover?</h1>
+      <main className="flex-grow isometric-grid flex flex-col justify-center items-center">
+        <div className="container mx-auto px-4 relative z-10 w-full">
+          {/* Hero section - only show if no results */}
+          {(!content && !isLoading && status !== "searching" && status !== "generating" && status !== "search_complete" && status !== "complete") ? (
+            <div className="neo-card p-5 sm:p-8 max-w-4xl mx-auto transform -translate-y-12">
+              <h1 className="text-3xl sm:text-5xl font-black mb-5 sm:mb-8 tracking-tight text-center">What can I help you to discover?</h1>
 
-            <SearchBar onSearch={handleSearch} initialValue={searchQuery} />
-      </div>
+              <div className="overflow-hidden w-full">
+                <SearchBar 
+                  onSearch={handleSearch} 
+                  initialValue={searchQuery} 
+                  isLoading={isSearching}
+                  onStop={handleStopSearch}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="neo-card p-5 sm:p-8 mb-8 max-w-4xl mx-auto mt-8">
+              <h1 className="text-3xl sm:text-5xl font-black mb-5 sm:mb-8 tracking-tight text-center">What can I help you to discover?</h1>
+
+              <div className="overflow-hidden w-full">
+                <SearchBar 
+                  onSearch={handleSearch} 
+                  initialValue={searchQuery} 
+                  isLoading={isSearching}
+                  onStop={handleStopSearch}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Streaming Results section */}
           {(content || isLoading || status === "searching" || status === "generating" || status === "search_complete" || status === "complete") && (
@@ -148,7 +191,12 @@ export default function Home() {
 
       {/* Floating search bar */}
       {shouldRenderFloatingSearch && (
-        <FloatingSearchBar onSearch={handleSearch} visible={showFloatingSearch} />
+        <FloatingSearchBar 
+          onSearch={handleSearch} 
+          visible={showFloatingSearch}
+          isLoading={isSearching}
+          onStop={handleStopSearch}
+        />
       )}
 
       {/* Footer banner */}

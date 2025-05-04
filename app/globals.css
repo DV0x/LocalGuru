@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Add custom xs breakpoint for tiny mobile screens */
+@layer components {
+  .xs\:inline {
+    @media (min-width: 400px) {
+      display: inline;
+    }
+  }
+  
+  .xs\:hidden {
+    @media (min-width: 400px) {
+      display: none;
+    }
+  }
+}
+
 :root {
   --background: 255 255 255;
   --foreground: 0 0 0;
@@ -173,10 +188,15 @@
     box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 1);
   }
 
-  /* Search input */
+  /* Search input - Enforce text truncation */
   .search-input {
     @apply w-full bg-white border-2 border-black px-4 py-3 text-lg focus:outline-none;
     box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 1);
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    max-width: 100%;
+    display: block;
   }
 
   /* Result card */
@@ -294,5 +314,27 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* Ensure parent containers don't allow overflow */
+  form[class*="w-full"] {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  /* Specific fixes for search bar overflow */
+  .neo-card .search-input {
+    width: 100% !important;
+    max-width: 100% !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+  
+  .neo-card form {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
   }
 }
