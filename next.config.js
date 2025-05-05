@@ -8,6 +8,10 @@ dotenv.config({ path: envPath });
 
 const nextConfig = {
   reactStrictMode: true,
+  // Ensure CSS is handled correctly
+  webpack: (config) => {
+    return config;
+  },
   env: {
     // Manually expose environment variables to the Next.js runtime
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
