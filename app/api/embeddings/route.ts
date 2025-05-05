@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { generateEmbeddings } from '../../../utils/search/query-processor';
-import { successResponse, errorResponse } from '../../../utils/api-response';
-import { handleApiError, logApiError } from '../../../utils/error-handling';
-import { withApiKeyValidation } from '../../../utils/api-key-middleware';
+import { generateEmbeddings } from '../utils/search/query-processor';
+import { successResponse, errorResponse } from '../utils/api-response';
+import { handleApiError, logApiError } from '../utils/error-handling';
+import { withApiKeyValidation } from '../utils/api-key-middleware';
 
 /**
  * API route for generating embeddings for search queries

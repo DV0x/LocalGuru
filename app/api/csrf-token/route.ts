@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateCsrfToken } from '../../../utils/csrf';
+import { generateCsrfToken } from '../utils/csrf';
 
 /**
  * GET handler for the CSRF token endpoint
