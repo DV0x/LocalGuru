@@ -1,0 +1,27 @@
+# Backend processing modules
+embedding-processor/
+localguru-ingestion/
+
+# Development and debug files
+*.log
+.history/
+backups/
+temp/
+*.sh
+**/test-*.js
+**/*.test.js
+**/*.test.ts
+**/test-*.ts
+
+# Local environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Other unnecessary files for deployment
+README.md
+PHASE*-SUMMARY.md
+PROJECT-SUMMARY.md
+fix_location_transfer.js
+fix_location_transfer.ts 
