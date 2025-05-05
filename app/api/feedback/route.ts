@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { supabaseAdmin } from '@/app/lib/supabase/client-server';
-import { successResponse, errorResponse } from '@/app/lib/utils/api-response';
-import { handleApiError, logApiError } from '@/app/lib/utils/error-handling';
-import { FeedbackOptions } from '@/app/lib/search/types';
+import { supabaseAdmin } from '@/utils/supabase/client-server';
+import { successResponse, errorResponse } from '@/utils/api-response';
+import { handleApiError, logApiError } from '@/utils/error-handling';
+import { FeedbackOptions } from '@/utils/search/types';
 
 /**
  * API route for submitting user feedback on search results

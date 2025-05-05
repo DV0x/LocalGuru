@@ -1,0 +1,500 @@
+import { supabaseAdmin } from '../supabase/client-server';
+import { QueryAnalysisResult, EmbeddingResult, SearchResult } from '../supabase/types';
+import { ApiError } from '../utils/error-handling';
+import { SearchOptions } from './types';
+
+// TEMPORARY FIX: Hardcoded API key from .env.local
+// In production, use a more secure approach or environment variables
+// This is only a temporary workaround for the environment variable issue
+const OPENAI_API_KEY = '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';
+
+// Define CommentSearchResult type that matches SearchResult structure
+export interface CommentSearchResult {
+  id: string;
+  title: string;           // Will be populated from post_title
+  content: string;         // Will be populated from comment_content
+  content_snippet: string; // Will be populated from comment_snippet
+  url: string;             // Empty or constructed from post_id
+  subreddit: string;
+  author: string;
+  content_type: string;    // Always 'comment'
+  created_at: string;
+  similarity: number;
+  match_type: string;
+  metadata: {
+    topics?: string[];
+    locations?: string[];
+    entities?: Record<string, string[]>;
+    type?: string;
+    length?: number;
+    semanticTags?: string[];
+    tokenEstimate?: number;
+    thread_context?: {
+      path?: string[];
+      depth?: number;
+      postId?: string;
+      parentId?: string;
+      postTitle?: string;
+      subreddit?: string;
+      parentComments?: string[];
+      original_comment_content?: string; // Store original comment content
+      original_post_title?: string;      // Store original post title
+    };
+    search_fallback?: boolean;
+  };
+  permalink?: string;
+}
+
+// Simple in-memory cache for search results
+// In production, consider using Redis or a similar distributed cache
+type CacheEntry = {
+  timestamp: number;
+  results: CommentSearchResult[];
+  analysis: QueryAnalysisResult;
+};
+
+const SEARCH_CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes in milliseconds
+const MAX_CACHE_SIZE = 100; // Maximum number of entries to prevent memory leaks
+
+/**
+ * Creates a cache key from search options
+ */
+function createCacheKey(options: SearchOptions): string {
+  return `${options.query.toLowerCase()}_${options.defaultLocation || ''}_${options.maxResults || 50}_${options.similarityThreshold || 0.6}_${options.vectorWeight || 0.7}_${options.textWeight || 0.3}_${options.efSearch || 100}`;
+}
+
+/**
+ * Cleans up old entries from the cache
+ */
+function cleanupCache(): void {
+  const now = Date.now();
+  
+  // Remove entries older than TTL
+  for (const [key, entry] of SEARCH_CACHE.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      SEARCH_CACHE.delete(key);
+    }
+  }
+  
+  // If still too many entries, remove oldest ones
+  if (SEARCH_CACHE.size > MAX_CACHE_SIZE) {
+    const entries = Array.from(SEARCH_CACHE.entries());
+    entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+    for (const [key] of toRemove) {
+      SEARCH_CACHE.delete(key);
+    }
+  }
+}
+
+// Interface for raw comment search database result
+interface CommentSearchDatabaseResult {
+  id: string;
+  comment_content: string;
+  comment_snippet: string;
+  post_title: string;
+  post_id: string;
+  subreddit: string;
+  author: string;
+  created_at: string;
+  similarity: number;
+  match_type: string;
+  metadata: Record<string, any>;
+  timed_out: boolean;
+}
+
+/**
+ * Analyzes a search query to extract intent, entities, topics, and locations
+ * @param query The user's search query
+ * @param defaultLocation Optional default location from the location selector
+ * @returns Structured analysis of the query
+ */
+export async function analyzeQuery(query: string, defaultLocation?: string): Promise<QueryAnalysisResult> {
+  try {
+    console.log(`Analyzing query: "${query}" ${defaultLocation ? `(default: ${defaultLocation})` : ''}`);
+    
+    const { data, error } = await supabaseAdmin.functions.invoke('query-analysis', {
+      body: { 
+        query,
+        defaultLocation  // Pass default location to edge function
+      }
+    });
+    
+    if (error) {
+      throw new ApiError(`Query analysis failed: ${error.message}`, 500);
+    }
+    
+    if (!data) {
+      throw new ApiError('No analysis data returned', 500);
+    }
+    
+    // Log the analysis results concisely
+    console.log(`Intent: ${data.intent}, Topics: ${data.topics?.join(', ') || 'none'}, Locations: ${data.locations?.join(', ') || 'none'}`);
+    
+    return data as QueryAnalysisResult;
+  } catch (error) {
+    console.error('Error in query analysis:', error);
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError('Failed to analyze query', 500);
+  }
+}
+
+/**
+ * Generates embeddings for a search query
+ * @param query The user's search query
+ * @returns Embedding vector for the query
+ */
+export async function generateEmbeddings(query: string): Promise<EmbeddingResult> {
+  try {
+    const { data, error } = await supabaseAdmin.functions.invoke('query-embeddings', {
+      body: { query }
+    });
+    
+    if (error) {
+      throw new ApiError(`Embedding generation failed: ${error.message}`, 500);
+    }
+    
+    if (!data || !data.embedding) {
+      throw new ApiError('No embedding data returned', 500);
+    }
+    
+    return data as EmbeddingResult;
+  } catch (error) {
+    console.error('Error generating embeddings:', error);
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError('Failed to generate embeddings', 500);
+  }
+}
+
+/**
+ * Generates embeddings with a direct API call fallback if the edge function fails
+ * This provides resilience against edge function outages
+ */
+export async function generateEmbeddingsWithFallback(query: string): Promise<EmbeddingResult> {
+  try {
+    // Try the edge function first
+    return await generateEmbeddings(query);
+  } catch (error) {
+    console.warn("Edge function embedding generation failed, using fallback:", error);
+    
+    // Use our hardcoded API key instead of relying on process.env
+    const openaiApiKey = OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      console.error("No OpenAI API key available for fallback embedding generation");
+      throw new ApiError('Embedding generation failed and no fallback available', 500);
+    }
+    
+    try {
+      console.log('Using direct API key for OpenAI embeddings');
+      // Fall back to direct embedding API call
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: query,
+          model: "text-embedding-3-large",
+          dimensions: 512,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.data || !data.data[0] || !data.data[0].embedding) {
+        throw new Error("Invalid response from OpenAI API");
+      }
+      
+      // Return the embedding in the expected format
+      return {
+        query,
+        embedding: data.data[0].embedding,
+        cached: false,
+      };
+    } catch (fallbackError: unknown) {
+      console.error("Fallback embedding generation also failed:", fallbackError);
+      throw new ApiError(`All embedding generation methods failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`, 500);
+    }
+  }
+}
+
+/**
+ * Executes comment-only search with timeout handling
+ */
+export async function executeSearch(
+  query: string,
+  queryEmbedding: number[] | null,
+  queryIntent: string = 'general',
+  queryTopics: string[] | null = null,
+  queryLocations: string[] | null = null,
+  maxResults: number = 50,
+  matchThreshold: number = 0.6,
+  vectorWeight: number = 0.7,
+  textWeight: number = 0.3,
+  efSearch: number = 200
+): Promise<CommentSearchResult[]> {
+  try {
+    console.log(`Search params: intent=${queryIntent}, topics=${queryTopics?.length || 0}, locations=${queryLocations?.join(', ') || 'none'}`);
+    
+    const startTime = Date.now();
+    
+    // Call the timeout-resilient comment search function
+    const { data, error } = await supabaseAdmin.rpc('comment_only_search_with_timeout', {
+      p_query: query,
+      p_query_embedding: queryEmbedding,
+      p_query_intent: queryIntent,
+      p_query_topics: queryTopics || [],
+      p_query_locations: queryLocations || [],
+      p_max_results: maxResults,
+      p_match_threshold: matchThreshold,
+      p_vector_weight: vectorWeight,
+      p_text_weight: textWeight,
+      p_ef_search: efSearch,
+      p_timeout_ms: 9000 // 9 second timeout
+    });
+    
+    const endTime = Date.now();
+    
+    if (error) {
+      console.error('Comment search error:', error);
+      throw new ApiError(`Comment search execution failed: ${error.message}`, 500);
+    }
+
+    // Check if search timed out and fell back to text search
+    const timedOut = data?.some((item: CommentSearchDatabaseResult) => item.timed_out);
+    
+    console.log(`Search completed in ${endTime - startTime}ms: ${data?.length || 0} results ${timedOut ? '(fallback)' : ''}`);
+    
+    // Transform the raw comment results to match SearchResult format
+    const formattedResults = data?.map((item: CommentSearchDatabaseResult) => {
+      return {
+        id: item.id,
+        title: item.post_title || '', // Use post title as the title
+        content: item.comment_content || '',
+        content_snippet: item.comment_snippet || '',
+        url: item.post_id ? `https://reddit.com/comments/${item.post_id}` : '',
+        subreddit: item.subreddit || '',
+        author: item.author || '',
+        content_type: 'comment', // Always 'comment' for these results
+        created_at: item.created_at || '',
+        similarity: item.similarity || 0,
+        match_type: item.match_type || '',
+        metadata: {
+          ...(item.metadata || {}),
+          thread_context: {
+            ...(item.metadata?.thread_context || {}),
+            original_comment_content: item.comment_content, // Store original comment content
+            original_post_title: item.post_title,           // Store original post title
+            postId: item.post_id,
+            postTitle: item.post_title
+          },
+          search_fallback: item.timed_out || false // Indicate if this result came from fallback search
+        }
+      } as CommentSearchResult;
+    }) || [];
+    
+    return formattedResults;
+  } catch (error) {
+    console.error('Error executing comment search:', error);
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    
+    throw new ApiError(`Failed to execute comment search: ${(error as Error).message}`, 500);
+  }
+}
+
+/**
+ * Complete search flow that handles all steps: analysis, embeddings, and search
+ * @param options Search options
+ * @returns Search results and analysis
+ */
+export async function performFullSearch(options: SearchOptions) {
+  const { 
+    query, 
+    defaultLocation,
+    maxResults = 50,
+    includeAnalysis = true,
+    similarityThreshold = 0.6,
+    subreddits = [],
+    useMetadataBoost = true,
+    useFallback = true,
+    skipCache = false,
+    vectorWeight = 0.7,
+    textWeight = 0.3,
+    efSearch = 200
+  } = options;
+
+  // Check cache first if not explicitly skipped
+  if (!skipCache) {
+    const cacheKey = createCacheKey(options);
+    const cachedResult = SEARCH_CACHE.get(cacheKey);
+    
+    if (cachedResult) {
+      console.log('Cache hit for query:', query);
+      return {
+        results: cachedResult.results,
+        analysis: includeAnalysis ? cachedResult.analysis : undefined,
+        query, // Always include the original query
+        cached: true
+      };
+    }
+  }
+
+  // Create a timeout promise that returns a specific error
+  const timeoutError = new Error('Search timeout exceeded');
+  timeoutError.name = 'TimeoutError';
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(timeoutError), 120000); // 120-second timeout
+  });
+
+  try {
+    // Use Promise.race to handle potential timeouts in any of the steps
+    // Start both analysis and embedding generation concurrently
+    const analysisPromise = analyzeQuery(query, defaultLocation);
+    const embeddingsPromise = generateEmbeddingsWithFallback(query);
+    
+    // Wait for both promises with timeout
+    const analysis = await Promise.race([analysisPromise, timeoutPromise]) as QueryAnalysisResult;
+    const embeddingResult = await Promise.race([embeddingsPromise, timeoutPromise]) as EmbeddingResult;
+    
+    // Execute the comment-only search
+    const searchResults = await Promise.race([
+      executeSearch(
+        query,
+        embeddingResult.embedding,
+        analysis.intent,
+        analysis.topics,
+        analysis.locations,
+        maxResults,
+        similarityThreshold,
+        vectorWeight,
+        textWeight,
+        efSearch
+      ),
+      timeoutPromise
+    ]) as CommentSearchResult[];
+    
+    // Log if no results were found
+    if (searchResults.length === 0) {
+      console.log(`No search results found for query: "${query}"`);
+      console.log(`Search parameters: intent=${analysis.intent}, topics=${analysis.topics?.join(',')}, locations=${analysis.locations?.join(',')}`);
+    }
+    
+    // Store in cache
+    const cacheKey = createCacheKey(options);
+    SEARCH_CACHE.set(cacheKey, {
+      timestamp: Date.now(),
+      results: searchResults,
+      analysis
+    });
+    
+    // Clean up cache occasionally
+    if (Math.random() < 0.1) { // 10% chance to run cleanup
+      cleanupCache();
+    }
+    
+    return {
+      results: searchResults,
+      analysis: includeAnalysis ? analysis : undefined,
+      query, // Always include the original query
+      cached: false,
+      originalQuery: query // Add an explicit originalQuery field for clarity
+    };
+  } catch (error) {
+    console.error('Error in search process:', error);
+    
+    // If the error is a timeout, try to return partial results
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      console.log('Search timeout occurred, attempting to return partial results');
+      
+      // Try to retrieve any cached results for similar queries
+      const similarQueries = SEARCH_CACHE.keys();
+      for (const key of similarQueries) {
+        if (key.includes(query.toLowerCase().substring(0, 5))) {
+          const cachedResult = SEARCH_CACHE.get(key);
+          if (cachedResult) {
+            console.log('Using cached results for similar query:', key);
+            return {
+              results: cachedResult.results,
+              analysis: includeAnalysis ? cachedResult.analysis : undefined,
+              query, // Include the original query
+              cached: true,
+              partial: true
+            };
+          }
+        }
+      }
+      
+      // If no similar cached results, return a timeout error
+      throw new ApiError('Search operation timed out. Please try a more specific query.', 408);
+    }
+    
+    // For other errors, just re-throw
+    throw error;
+  }
+}
+
+/**
+ * Logs search performance data to the search_performance_logs table
+ * @param queryData Information about the search query and performance
+ */
+export async function logSearchPerformance({
+  query,
+  intent,
+  vectorWeight,
+  textWeight,
+  efSearch,
+  durationMs,
+  resultCount,
+  timedOut,
+  errorMessage = null,
+  source = 'streaming-search'
+}: {
+  query: string;
+  intent: string;
+  vectorWeight: number;
+  textWeight: number;
+  efSearch: number;
+  durationMs: number;
+  resultCount: number;
+  timedOut: boolean;
+  errorMessage?: string | null;
+  source?: string;
+}) {
+  try {
+    const { error } = await supabaseAdmin
+      .from('search_performance_logs')
+      .insert({
+        query,
+        intent,
+        vector_weight: vectorWeight,
+        text_weight: textWeight,
+        ef_search: efSearch,
+        duration_ms: durationMs,
+        result_count: resultCount,
+        timed_out: timedOut,
+        error_message: errorMessage,
+        source
+      });
+
+    if (error) {
+      console.error('Failed to log search performance:', error);
+    }
+  } catch (err) {
+    console.error('Error logging search performance:', err);
+    // Don't throw error since this is non-critical functionality
+  }
+} 
