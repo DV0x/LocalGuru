@@ -1,12 +1,11 @@
 // Fix for location transfer in query analysis
 // This script updates the query analysis function to ensure locations from entities are included in the top-level locations array
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.21.0";
+import { createClient } from '@supabase/supabase-js';
 
 // Create Supabase client
-const supabaseUrl = Deno.env.get("SUPABASE_URL");
-const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Function to normalize locations
@@ -25,26 +24,12 @@ function normalizeLocation(location) {
   return locationMap[location.toLowerCase()] || location;
 }
 
-serve(async (req) => {
+export async function fixLocationTransfer(query) {
   try {
-    // Handle CORS preflight request
-    if (req.method === "OPTIONS") {
-      return new Response("ok", {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST",
-          "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-        },
-      });
-    }
-
-    // Parse the request body
-    const { query } = await req.json();
-
     // Call the OpenAI API or your existing query analysis function
     // This is a placeholder for your existing analysis logic
     const { data: analysisResult, error } = await supabase.functions.invoke("query-analysis-original", {
-      body: JSON.stringify({ query }),
+      body: { query },
     });
 
     if (error) throw error;
@@ -67,19 +52,20 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify(analysisResult), {
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    return analysisResult;
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    console.error('Error in fixLocationTransfer:', error);
+    throw error;
   }
-}); 
+}
+
+// If running this file directly
+if (require.main === module) {
+  const testQuery = process.argv[2] || "Where to eat in SF?";
+  
+  fixLocationTransfer(testQuery)
+    .then(result => console.log(JSON.stringify(result, null, 2)))
+    .catch(error => console.error('Error:', error));
+}
+
+export default fixLocationTransfer; 
