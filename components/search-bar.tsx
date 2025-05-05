@@ -144,7 +144,7 @@ export function SearchBar({ onSearch, initialValue = "", isLoading = false, onSt
       <style jsx>{`
         input::placeholder {
           transition: opacity 0.3s ease, transform 0.3s ease;
-          opacity: ${isTransitioning ? 0 : 0.65};
+          opacity: ${isTransitioning ? 0 : 0.75};
           transform: translateY(${isTransitioning ? '5px' : '0'});
         }
       `}</style>
