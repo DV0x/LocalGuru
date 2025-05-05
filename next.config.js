@@ -11,15 +11,13 @@ const nextConfig = {
   
   // Configure path resolution
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Explicitly map paths from @/lib to @/app/lib
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@/lib/utils': path.resolve(__dirname, 'app/lib/utils'),
-      '@/lib/search': path.resolve(__dirname, 'app/lib/search'),
-      '@/lib/supabase': path.resolve(__dirname, 'app/lib/supabase'),
-      '@/lib/llm': path.resolve(__dirname, 'app/lib/llm'),
-      '@/lib/prompts': path.resolve(__dirname, 'app/lib/prompts'),
-      '@/lib/validators': path.resolve(__dirname, 'app/lib/validators')
+    // Set up basic path resolution
+    config.resolve = {
+      ...config.resolve,
+      alias: {
+        ...config.resolve.alias,
+        '@/app': path.resolve(__dirname, 'app')
+      }
     };
     
     return config;
