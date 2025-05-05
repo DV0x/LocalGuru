@@ -9,15 +9,14 @@ dotenv.config({ path: envPath });
 const nextConfig = {
   reactStrictMode: true,
   
-  // Exclude backend processing directories from the build
+  // Configure path resolution
   webpack: (config) => {
-    // Add path aliases
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': path.resolve(__dirname),
-      '@/app': path.resolve(__dirname, 'app'),
-      '@/lib': path.resolve(__dirname, 'lib'),
-      '@/components': path.resolve(__dirname, 'components')
+    // Ensure Next.js resolves @/app paths correctly
+    config.resolve = {
+      ...config.resolve,
+      alias: {
+        ...config.resolve.alias,
+      }
     };
     
     return config;

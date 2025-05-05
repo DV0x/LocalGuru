@@ -26,8 +26,5 @@
         }
       ]
     }
-  ],
-  "rewrites": [
-    { "source": "/app/lib/utils/:path*", "destination": "/lib/utils/:path*" }
   ]
 } 
