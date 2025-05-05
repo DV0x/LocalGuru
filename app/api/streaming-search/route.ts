@@ -1,9 +1,9 @@
-import { getSearchSynthesisPrompt } from '@/lib/prompts/search-synthesis-prompt';
-import { performFullSearch, logSearchPerformance } from '@/lib/search/query-processor';
-import { formatSearchResultsForLLM, formatResultForClient } from '@/lib/search/stream-processor';
-import { StreamingStatus } from '@/lib/search/streaming-types';
-import { streamingSearchSchema, type StreamingSearchRequest } from '@/lib/validators/schemas';
-import { validateRequestBody } from '@/lib/validators/validate-request';
+import { getSearchSynthesisPrompt } from '../../lib/prompts/search-synthesis-prompt';
+import { performFullSearch, logSearchPerformance } from '../../lib/search/query-processor';
+import { formatSearchResultsForLLM, formatResultForClient } from '../../lib/search/stream-processor';
+import { StreamingStatus } from '../../lib/search/streaming-types';
+import { streamingSearchSchema, type StreamingSearchRequest } from '../../lib/validators/schemas';
+import { validateRequestBody } from '../../lib/validators/validate-request';
 
 /**
  * Configure this route to use Edge Runtime for optimal performance

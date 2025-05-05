@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase/client-server';
-import { performFullSearch } from '@/lib/search/query-processor';
-import { SearchResult } from '@/lib/supabase/types';
+import { supabaseAdmin } from '../../lib/supabase/client-server';
+import { performFullSearch } from '../../lib/search/query-processor';
+import { SearchResult } from '../../lib/supabase/types';
 
 /**
  * Comprehensive test endpoint for debugging search functionality

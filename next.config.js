@@ -9,20 +9,6 @@ dotenv.config({ path: envPath });
 const nextConfig = {
   reactStrictMode: true,
   
-  // Configure path resolution - simplified approach
-  webpack: (config, { defaultLoaders }) => {
-    // Resolve paths using simpler configuration
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': path.resolve(__dirname),
-      '@/app': path.resolve(__dirname, 'app'),
-      '@/lib': path.resolve(__dirname, 'lib'),
-      '@/components': path.resolve(__dirname, 'components')
-    };
-    
-    return config;
-  },
-  
   // Skip TypeScript checking for excluded directories
   typescript: {
     ignoreBuildErrors: false, // Keep the type checking for other code
@@ -43,4 +29,4 @@ const nextConfig = {
   }
 }
  
-module.exports = nextConfig 
+module.exports = nextConfig

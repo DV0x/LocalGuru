@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase/client-server';
-import { withApiKeyValidation } from '@/lib/utils/api-key-middleware';
+import { supabaseAdmin } from '../../../lib/supabase/client-server';
+import { withApiKeyValidation } from '../../../lib/utils/api-key-middleware';
 
 /**
  * Debug endpoint for checking database content and representations

@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { analyzeQuery } from '@/lib/search/query-processor';
-import { successResponse, errorResponse } from '@/lib/utils/api-response';
-import { handleApiError, logApiError } from '@/lib/utils/error-handling';
-import { withApiKeyValidation } from '@/lib/utils/api-key-middleware';
+import { analyzeQuery } from '../../lib/search/query-processor';
+import { successResponse, errorResponse } from '../../lib/utils/api-response';
+import { handleApiError, logApiError } from '../../lib/utils/error-handling';
+import { withApiKeyValidation } from '../../lib/utils/api-key-middleware';
 
 /**
  * API route for analyzing search queries
