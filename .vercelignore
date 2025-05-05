@@ -1,6 +1,7 @@
 # Backend processing modules
 embedding-processor/
 localguru-ingestion/
+supabase/functions/
 
 # Development and debug files
 *.log
