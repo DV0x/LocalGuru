@@ -2,6 +2,7 @@
 embedding-processor/
 localguru-ingestion/
 supabase/functions/
+utils/backend/
 
 # Development and debug files
 *.log
