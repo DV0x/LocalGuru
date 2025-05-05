@@ -11,7 +11,15 @@ const nextConfig = {
   
   // Exclude backend processing directories from the build
   webpack: (config) => {
-    // Simple exclusion of directories without spread operators that could cause errors
+    // Add path aliases
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname),
+      '@/app': path.resolve(__dirname, 'app'),
+      '@/lib': path.resolve(__dirname, 'lib'),
+      '@/components': path.resolve(__dirname, 'components')
+    };
+    
     return config;
   },
   

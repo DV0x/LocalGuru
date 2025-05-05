@@ -2,6 +2,9 @@
   "functions": {
     "app/api/search/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/embeddings/route.ts": {
+      "maxDuration": 10
     }
   },
   "headers": [
@@ -13,6 +16,18 @@
           "value": "keep-alive"
         }
       ]
+    },
+    {
+      "source": "/api/embeddings",
+      "headers": [
+        {
+          "key": "Connection",
+          "value": "keep-alive"
+        }
+      ]
     }
+  ],
+  "rewrites": [
+    { "source": "/app/lib/utils/:path*", "destination": "/lib/utils/:path*" }
   ]
 } 
