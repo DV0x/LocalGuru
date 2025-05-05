@@ -14,12 +14,18 @@ const nextConfig = {
   
   // Configure path resolution
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Set up basic path resolution
+    // Set up enhanced path resolution
     config.resolve = {
       ...config.resolve,
       alias: {
         ...config.resolve.alias,
-        '@/app': path.resolve(__dirname, 'app')
+        '@/app': path.resolve(__dirname, 'app'),
+        '@/app/lib': path.resolve(__dirname, 'app/lib'),
+        '@/app/lib/utils': path.resolve(__dirname, 'app/lib/utils'),
+        '@/app/lib/search': path.resolve(__dirname, 'app/lib/search'),
+        '@/app/lib/supabase': path.resolve(__dirname, 'app/lib/supabase'),
+        '@/app/lib/llm': path.resolve(__dirname, 'app/lib/llm'),
+        '@/components': path.resolve(__dirname, 'components')
       }
     };
     
