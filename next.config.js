@@ -14,20 +14,33 @@ const nextConfig = {
   
   // Configure path resolution
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Set up basic path resolution
+    // Enhanced path resolution to ensure all imports work correctly
     config.resolve = {
       ...config.resolve,
       alias: {
         ...config.resolve.alias,
-        '@/app': path.resolve(__dirname, 'app')
-      }
+        '@/app': path.resolve(__dirname, 'app'),
+        '@/app/lib': path.resolve(__dirname, 'app/lib'),
+        '@/app/lib/utils': path.resolve(__dirname, 'app/lib/utils'),
+        '@/app/lib/search': path.resolve(__dirname, 'app/lib/search'),
+        '@/app/lib/supabase': path.resolve(__dirname, 'app/lib/supabase')
+      },
+      // Ensure proper module resolution
+      modules: [
+        path.resolve(__dirname),  // Add root directory
+        path.resolve(__dirname, 'app'), // Add app directory
+        'node_modules'  // Keep node_modules in the resolution path
+      ]
     };
     
-    // Ensure files in app/lib are properly processed
+    // More robust rule for processing files in app/lib
     config.module.rules.push({
       test: /\.(js|ts|tsx)$/,
       include: [
         path.resolve(__dirname, 'app/lib'),
+        path.resolve(__dirname, 'app/lib/utils'),
+        path.resolve(__dirname, 'app/lib/search'),
+        path.resolve(__dirname, 'app/lib/supabase')
       ],
       use: defaultLoaders.babel,
     });
