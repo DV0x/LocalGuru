@@ -9,34 +9,16 @@ dotenv.config({ path: envPath });
 const nextConfig = {
   reactStrictMode: true,
   
-  // Tell Next.js to transpile the app/lib directory
-  transpilePackages: ['app/lib'],
-  
-  // Configure path resolution
-  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Set up enhanced path resolution
-    config.resolve = {
-      ...config.resolve,
-      alias: {
-        ...config.resolve.alias,
-        '@/app': path.resolve(__dirname, 'app'),
-        '@/app/lib': path.resolve(__dirname, 'app/lib'),
-        '@/app/lib/utils': path.resolve(__dirname, 'app/lib/utils'),
-        '@/app/lib/search': path.resolve(__dirname, 'app/lib/search'),
-        '@/app/lib/supabase': path.resolve(__dirname, 'app/lib/supabase'),
-        '@/app/lib/llm': path.resolve(__dirname, 'app/lib/llm'),
-        '@/components': path.resolve(__dirname, 'components')
-      }
+  // Configure path resolution - simplified approach
+  webpack: (config, { defaultLoaders }) => {
+    // Resolve paths using simpler configuration
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname),
+      '@/app': path.resolve(__dirname, 'app'),
+      '@/lib': path.resolve(__dirname, 'lib'),
+      '@/components': path.resolve(__dirname, 'components')
     };
-    
-    // Ensure files in app/lib are properly processed
-    config.module.rules.push({
-      test: /\.(js|ts|tsx)$/,
-      include: [
-        path.resolve(__dirname, 'app/lib'),
-      ],
-      use: defaultLoaders.babel,
-    });
     
     return config;
   },

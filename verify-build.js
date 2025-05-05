@@ -9,17 +9,26 @@ const path = require('path');
 
 console.log('Running build verification checks...');
 
-// Check that critical utility files exist
-const utilsPath = path.resolve(__dirname, 'app/lib/utils');
+// Check utility files in app/lib
+const appUtilsPath = path.resolve(__dirname, 'app/lib/utils');
+const topLevelUtilsPath = path.resolve(__dirname, 'lib/utils');
+
 const requiredUtils = [
   'api-response.ts',
   'error-handling.ts',
   'api-key-middleware.ts'
 ];
 
-console.log('\nChecking utility files:');
+console.log('\nChecking app/lib/utils files:');
 requiredUtils.forEach(file => {
-  const filePath = path.join(utilsPath, file);
+  const filePath = path.join(appUtilsPath, file);
+  const exists = fs.existsSync(filePath);
+  console.log(` - ${file}: ${exists ? '✅ Found' : '❌ Not found'}`);
+});
+
+console.log('\nChecking lib/utils files:');
+requiredUtils.forEach(file => {
+  const filePath = path.join(topLevelUtilsPath, file);
   const exists = fs.existsSync(filePath);
   console.log(` - ${file}: ${exists ? '✅ Found' : '❌ Not found'}`);
 });
@@ -27,11 +36,11 @@ requiredUtils.forEach(file => {
 // Check path resolution in tsconfig.json
 console.log('\nChecking tsconfig.json path mappings:');
 const tsConfig = require('./tsconfig.json');
-const hasAppPath = tsConfig.compilerOptions.paths && 
-                   (tsConfig.compilerOptions.paths['@/app/*'] || 
-                    tsConfig.compilerOptions.paths['@/app/lib/*']);
+const hasAppPath = tsConfig.compilerOptions.paths && tsConfig.compilerOptions.paths['@/app/*'];
+const hasLibPath = tsConfig.compilerOptions.paths && tsConfig.compilerOptions.paths['@/lib/*'];
 
 console.log(` - @/app/* mapping: ${hasAppPath ? '✅ Found' : '❌ Not found'}`);
+console.log(` - @/lib/* mapping: ${hasLibPath ? '✅ Found' : '❌ Not found'}`);
 
 // Check Next.js config
 console.log('\nChecking next.config.js:');
