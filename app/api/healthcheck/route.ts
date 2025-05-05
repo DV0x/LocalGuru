@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../../lib/supabase/client-server';
+import { supabaseAdmin } from '@/app/lib/supabase/client-server';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'edge';

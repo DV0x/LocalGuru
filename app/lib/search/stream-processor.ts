@@ -1,5 +1,5 @@
-import { SearchResult } from '@/lib/supabase/types';
-import { CommentSearchResult } from '@/lib/search/query-processor';
+import { SearchResult } from '@/app/lib/supabase/types';
+import { CommentSearchResult } from '@/app/lib/search/query-processor';
 
 /**
  * Format search results for LLM consumption.

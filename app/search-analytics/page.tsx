@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase/client-server';
+import { supabaseAdmin } from '@/app/lib/supabase/client-server';
 import { formatDistance } from 'date-fns';
 
 // Define types for our analytics data

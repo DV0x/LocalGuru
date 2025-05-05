@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { MarkdownRenderer } from './markdown-renderer';
-import { StreamingStatus } from '@/app/lib/search/streaming-types';
+import { StreamingStatus } from '@/lib/search/streaming-types';
 import { Check, AlertTriangle, Sparkles } from 'lucide-react';
 
 interface SearchResult {
