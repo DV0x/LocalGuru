@@ -53,3 +53,6 @@ next-env.d.ts
 # local files
 *.local
 *.log
+
+# backups
+/backups/
