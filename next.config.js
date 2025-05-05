@@ -9,27 +9,25 @@ dotenv.config({ path: envPath });
 const nextConfig = {
   reactStrictMode: true,
   
-  // Tell Next.js to transpile the utils directory
-  transpilePackages: ['utils'],
+  // Tell Next.js to transpile the app/lib directory
+  transpilePackages: ['app/lib'],
   
   // Configure path resolution
-  webpack: (config, { defaultLoaders }) => {
-    // Set up path resolution using Next.js convention
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Set up basic path resolution
     config.resolve = {
       ...config.resolve,
       alias: {
         ...config.resolve.alias,
-        '@/utils': path.resolve(__dirname, 'utils'),
-        '@/app': path.resolve(__dirname, 'app'),
-        '@/components': path.resolve(__dirname, 'components')
+        '@/app': path.resolve(__dirname, 'app')
       }
     };
     
-    // Ensure files in utils are properly processed
+    // Ensure files in app/lib are properly processed
     config.module.rules.push({
       test: /\.(js|ts|tsx)$/,
       include: [
-        path.resolve(__dirname, 'utils'),
+        path.resolve(__dirname, 'app/lib'),
       ],
       use: defaultLoaders.babel,
     });

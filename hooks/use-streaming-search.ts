@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StreamingStatus, StreamingUpdate } from '@/lib/search/streaming-types';
+import { StreamingStatus, StreamingUpdate } from '@/app/lib/search/streaming-types';
 
 // Define interface for search options
 interface SearchOptions {
