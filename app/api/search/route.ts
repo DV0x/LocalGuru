@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
-import { performFullSearch } from '@/utils/search/query-processor';
-import { formatSearchResults } from '@/utils/search/result-formatter';
-import { successResponse, errorResponse, timeoutResponse } from '@/utils/api-response';
-import { handleApiError, logApiError } from '@/utils/error-handling';
-import { SearchOptions } from '@/utils/search/types';
+import { performFullSearch } from '../../../utils/search/query-processor';
+import { formatSearchResults } from '../../../utils/search/result-formatter';
+import { successResponse, errorResponse, timeoutResponse } from '../../../utils/api-response';
+import { handleApiError, logApiError } from '../../../utils/error-handling';
+import { SearchOptions } from '../../../utils/search/types';
 
 // Increase timeout for this API route to 30 seconds (default is 10 seconds)
 export const dynamic = 'force-dynamic';

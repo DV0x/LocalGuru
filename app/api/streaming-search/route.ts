@@ -1,7 +1,7 @@
 import { getSearchSynthesisPrompt } from '@/app/lib/prompts/search-synthesis-prompt';
-import { performFullSearch, logSearchPerformance } from '@/utils/search/query-processor';
-import { formatSearchResultsForLLM, formatResultForClient } from '@/utils/search/stream-processor';
-import { StreamingStatus } from '@/utils/search/streaming-types';
+import { performFullSearch, logSearchPerformance } from '../../../utils/search/query-processor';
+import { formatSearchResultsForLLM, formatResultForClient } from '../../../utils/search/stream-processor';
+import { StreamingStatus } from '../../../utils/search/streaming-types';
 import { streamingSearchSchema, type StreamingSearchRequest } from '@/app/lib/validators/schemas';
 import { validateRequestBody } from '@/app/lib/validators/validate-request';
 
