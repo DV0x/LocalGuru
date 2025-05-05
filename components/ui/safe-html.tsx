@@ -4,6 +4,9 @@ import DOMPurify from 'dompurify';
 import { useEffect, useRef, memo } from 'react';
 import { twMerge } from 'tailwind-merge';
 
+// Import the types separately if needed
+import type { Config as DOMPurifyConfig } from 'dompurify';
+
 export interface SafeHtmlProps {
   /**
    * The HTML content to sanitize and render
@@ -40,7 +43,7 @@ function SafeHtml({
   
   useEffect(() => {
     // Configure DOMPurify with secure defaults
-    const config: DOMPurify.Config = {
+    const config: DOMPurifyConfig = {
       ALLOWED_TAGS: allowedTags || [
         // Text formatting
         'p', 'b', 'i', 'em', 'strong', 'a', 'br', 'hr',
@@ -70,7 +73,7 @@ function SafeHtml({
     };
     
     // Add hook to make all links open in new tab with security attributes
-    DOMPurify.addHook('afterSanitizeAttributes', function(node) {
+    DOMPurify.addHook('afterSanitizeAttributes', (node: Element) => {
       if (node.tagName === 'A') {
         // Add security attributes to all links
         node.setAttribute('target', '_blank');
