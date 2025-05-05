@@ -12,6 +12,7 @@ temp/
 **/*.test.js
 **/*.test.ts
 **/test-*.ts
+localguru-test.ts
 
 # Local environment files
 .env.local
