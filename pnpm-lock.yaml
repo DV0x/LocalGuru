@@ -99,7 +99,7 @@ importers:
         specifier: ^2.39.3
         version: 2.49.4
       '@types/dompurify':
-        specifier: ^3.0.5
+        specifier: ^3.2.0
         version: 3.2.0
       ai:
         specifier: ^4.3.13
