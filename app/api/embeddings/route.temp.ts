@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
-import { analyzeQuery } from '@/lib/search/query-processor';
-import { successResponse, errorResponse } from '@/lib/utils/api-response';
-import { handleApiError, logApiError } from '@/lib/utils/error-handling';
-import { withApiKeyValidation } from '@/lib/utils/api-key-middleware';
+// Try alternative import paths
+import { generateEmbeddings } from '../../../app/lib/search/query-processor';
+import { successResponse, errorResponse } from '../../../app/lib/utils/api-response';
+import { handleApiError, logApiError } from '../../../app/lib/utils/error-handling';
+import { withApiKeyValidation } from '../../../app/lib/utils/api-key-middleware';
 
 /**
- * API route for analyzing search queries
+ * API route for generating embeddings for search queries
  * Proxies requests to the Supabase edge function securely
  * Protected by API key validation
  */
@@ -19,19 +20,25 @@ async function handler(request: NextRequest) {
       return errorResponse('Query is required and must be a string', 400);
     }
     
-    // Log the analysis request (without sensitive data)
-    console.log('Query analysis request:', { 
+    // Log the embedding request (without sensitive data)
+    console.log('Embedding request:', { 
       query: body.query,
       timestamp: new Date().toISOString()
     });
     
-    // Call the query analysis function
-    const analysis = await analyzeQuery(body.query);
+    // Generate embeddings
+    const result = await generateEmbeddings(body.query);
     
-    // Return the analysis result
-    return successResponse({ analysis });
+    // For security and bandwidth reasons, we might want to limit what we return
+    // Here we're returning everything including the full embedding vector
+    return successResponse({
+      query: result.query,
+      embedding: result.embedding,
+      cached: result.cached,
+      created_at: result.created_at
+    });
   } catch (error) {
-    logApiError('query-analysis API', error);
+    logApiError('embeddings API', error);
     return handleApiError(error);
   }
 }
