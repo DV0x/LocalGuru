@@ -2,7 +2,7 @@
 
 /**
  * This script migrates required files from app/lib to the top-level lib directory
- * and updates import paths in API routes
+ * and updates import paths in API routes and other directories
  */
 
 const fs = require('fs');
@@ -49,22 +49,25 @@ directoriesToCopy.forEach(dir => {
       return;
     }
     
-    fs.copyFileSync(sourcePath, targetPath);
-    console.log(`Copied ${sourcePath} to ${targetPath}`);
+    // Read file content and update imports before copying
+    let content = fs.readFileSync(sourcePath, 'utf8');
+    const updatedContent = content.replace(/@\/app\/lib\//g, '@/lib/');
+    
+    fs.writeFileSync(targetPath, updatedContent);
+    console.log(`Copied and updated imports in ${sourcePath} to ${targetPath}`);
   });
 });
 
-// Update imports in all API route files
-const apiDir = 'app/api';
-const updateImports = (dir) => {
+// Update imports in files
+const updateImportsInDirectory = (dir) => {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     
     if (entry.isDirectory()) {
-      updateImports(fullPath);
-    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      updateImportsInDirectory(fullPath);
+    } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) {
       let content = fs.readFileSync(fullPath, 'utf8');
       
       // Replace @/app/lib with @/lib in imports
@@ -78,6 +81,57 @@ const updateImports = (dir) => {
   }
 };
 
-updateImports(apiDir);
+// Update imports in all app subdirectories
+console.log('Updating imports in all app subdirectories...');
+updateImportsInDirectory('app');
+
+// Update imports in components and hooks
+console.log('Updating imports in components and hooks...');
+if (fs.existsSync('components')) {
+  updateImportsInDirectory('components');
+}
+if (fs.existsSync('hooks')) {
+  updateImportsInDirectory('hooks');
+}
+
+// Make sure the verify-imports file is updated
+if (fs.existsSync('verify-imports.ts')) {
+  let content = fs.readFileSync('verify-imports.ts', 'utf8');
+  const updatedContent = content.replace(/@\/app\/lib\//g, '@/lib/');
+  fs.writeFileSync('verify-imports.ts', updatedContent);
+  console.log('Updated imports in verify-imports.ts');
+}
+
+// Create a helper file to explicitly link the app/lib to lib
+// This can help with transitive dependencies
+const helperContent = `/**
+ * This file helps with module resolution by re-exporting everything from the top-level lib
+ * It ensures backward compatibility with existing @/app/lib imports
+ */
+
+// Re-export all utilities
+export * from '@/lib/utils/api-response';
+export * from '@/lib/utils/error-handling'; 
+export * from '@/lib/utils/api-key-middleware';
+export * from '@/lib/utils/csrf';
+export * from '@/lib/utils/csrf-middleware';
+export * from '@/lib/utils/api-key-validator';
+
+// Re-export Supabase client
+export * from '@/lib/supabase/client-server';
+export * from '@/lib/supabase/types';
+
+// Re-export search functionality
+export * from '@/lib/search/query-processor';
+export * from '@/lib/search/result-formatter';
+export * from '@/lib/search/stream-processor';
+export * from '@/lib/search/streaming-types';
+export * from '@/lib/search/types';
+`;
+
+// Write helper file to app/lib/index.ts
+fs.mkdirSync('app/lib', { recursive: true });
+fs.writeFileSync('app/lib/index.ts', helperContent);
+console.log('Created helper re-export file at app/lib/index.ts');
 
 console.log('Migration completed successfully.'); 

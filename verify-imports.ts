@@ -4,9 +4,9 @@
  */
 
 // Import from lib/utils
-import { successResponse, errorResponse } from '@/app/lib/utils/api-response';
-import { handleApiError, logApiError } from '@/app/lib/utils/error-handling';
-import { withApiKeyValidation } from '@/app/lib/utils/api-key-middleware';
+import { successResponse, errorResponse } from '@/lib/utils/api-response';
+import { handleApiError, logApiError } from '@/lib/utils/error-handling';
+import { withApiKeyValidation } from '@/lib/utils/api-key-middleware';
 
 // Log verification
 console.log('Utils imports verified:', { 
