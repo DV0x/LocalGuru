@@ -22,7 +22,11 @@ export function LocationSelector({
   useEffect(() => {
     console.log("Component mounted");
     setIsMounted(true);
-    return () => setIsMounted(false);
+    return () => {
+      console.log("Component unmounted");
+      setIsMounted(false);
+      setIsOpen(false); // Ensure dropdown closes when component unmounts
+    }
   }, []);
 
   // Update button position
@@ -131,8 +135,8 @@ export function LocationSelector({
 
   // Simpler dropdown rendering without relying on buttonRect initially
   const renderDropdown = () => {
-    if (!isMounted) {
-      console.log("Not mounted yet, can't render dropdown");
+    if (!isMounted || !isOpen) {
+      console.log("Not mounted or not open, can't render dropdown");
       return null;
     }
 
