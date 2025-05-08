@@ -12,16 +12,31 @@ export const runtime = 'edge';
 export const preferredRegion = 'auto';
 export const fetchCache = 'force-no-store'; // Add force-no-store to prevent caching
 
+// Helper to create a response with correct streaming headers
+function createStreamResponse(readable: ReadableStream) {
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Prevent Nginx buffering
+      'Transfer-Encoding': 'chunked' // Ensure chunked transfer encoding
+    },
+  });
+}
+
 /**
  * Streaming search endpoint - full implementation
  * Handles streaming search with LLM processing for narrative responses
  */
 export async function POST(req: Request) {
+  // Create encoder/decoder once
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  
   try {
-    // Parse the request body
+    // Parse and validate the request body
     const body = await req.json().catch(() => ({}));
-    
-    // Validate the request body using Zod
     const validation = await validateRequestBody(body, streamingSearchSchema);
     
     if (!validation.success) {
@@ -31,7 +46,7 @@ export async function POST(req: Request) {
       );
     }
     
-    // Use the validated data with proper types
+    // Use validated data
     const {
       query,
       defaultLocation,
@@ -52,41 +67,40 @@ export async function POST(req: Request) {
       textWeight
     });
     
-    // Create a TransformStream for easier management
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
+    // Create streaming infrastructure
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
     
-    // Function to write and immediately flush data
-    const writeAndFlush = async (data: string) => {
-      console.log('Writing to stream:', data.substring(0, 50) + (data.length > 50 ? '...' : ''));
-      await writer.write(encoder.encode(data));
+    // Safe write helper with debugging
+    const writeChunk = async (data: string) => {
+      try {
+        await writer.write(encoder.encode(data + '\n'));
+      } catch (e) {
+        console.error('Error writing to stream:', e);
+      }
     };
     
-    // Process in a separate async task to avoid blocking the response
+    // Start the main processing in a non-blocking way
     (async () => {
+      const startTime = Date.now();
+      let keepaliveInterval: NodeJS.Timeout | null = null;
+      
       try {
-        // Create an AbortController for Anthropic API calls
-        const anthropicController = new AbortController();
-        
-        // Send initial status
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'initializing' as StreamingStatus,
+        // Initial status update
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'initializing',
           timestamp: Date.now()
-        }) + '\n');
+        }));
         
-        // Start timing
-        const startTime = Date.now();
-        
-        // Send searching status
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'searching' as StreamingStatus,
+        // Start search
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'searching',
           timestamp: Date.now()
-        }) + '\n');
+        }));
         
-        // Execute search with validated parameters
+        // Perform the search
         const searchResponse = await performFullSearch({
           query,
           defaultLocation,
@@ -99,27 +113,24 @@ export async function POST(req: Request) {
           similarityThreshold: 0.6
         });
         
-        // Log search time
         const searchTime = Date.now() - startTime;
-        console.log(`Search completed in ${searchTime}ms for query: ${query}`);
-        console.log(`Search results: ${searchResponse.results.length} items found`);
+        console.log(`Search completed in ${searchTime}ms, found ${searchResponse.results.length} results`);
         
-        // Send search complete status
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'search_complete' as StreamingStatus,
+        // Search complete status
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'search_complete',
           resultCount: searchResponse.results.length,
           message: `Found ${searchResponse.results.length} results`,
           timestamp: Date.now()
-        }) + '\n');
+        }));
         
-        // Format search results for LLM
+        // Prepare for generation
         const formattedSearchContent = formatSearchResultsForLLM(
           searchResponse.results,
           query
         );
         
-        // Get system prompt
         const systemPrompt = getSearchSynthesisPrompt(
           promptVersion as any,
           searchResponse.analysis,
@@ -127,38 +138,31 @@ export async function POST(req: Request) {
           query
         );
         
-        // Send generating status
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'generating' as StreamingStatus,
+        // Starting generation
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'generating',
           message: 'Synthesizing insights from results...',
           timestamp: Date.now()
-        }) + '\n');
+        }));
         
-        // Format client results
+        // Send early metadata with search results
         const clientResults = searchResponse.results.map(formatResultForClient);
-        
-        // Send early metadata
-        const earlyMetadataJson = JSON.stringify({
+        await writeChunk('METADATA:' + JSON.stringify({
           searchResults: clientResults,
           query,
           analysis: searchResponse.analysis,
           searchTime,
           totalResults: searchResponse.results.length,
           defaultLocation
-        });
+        }));
         
-        await writeAndFlush('METADATA:' + earlyMetadataJson + '\n');
-        console.log('Metadata sent, preparing for AI streaming...');
-        
-        // DIRECT API CALL to Anthropic
+        // Set up Anthropic API call
         const apiKey = process.env.ANTHROPIC_API_KEY;
-        
         if (!apiKey) {
           throw new Error('Anthropic API key not configured');
         }
         
-        // Try with the exact Claude API parameters
         const requestBody = {
           model: 'claude-3-5-haiku-20241022',
           system: systemPrompt,
@@ -170,13 +174,25 @@ export async function POST(req: Request) {
           stream: true
         };
         
-        console.log('Making API call to Anthropic...');
+        // Send first keepalive and start regular interval
+        await writeChunk(': keepalive ping before streaming\n');
         
-        // Simple retry once if needed
+        // Set up keepalive interval - every 5 seconds
+        keepaliveInterval = setInterval(async () => {
+          try {
+            await writeChunk(': keepalive ping\n');
+          } catch (e) {
+            console.error('Error sending keepalive:', e);
+            if (keepaliveInterval) clearInterval(keepaliveInterval);
+          }
+        }, 5000);
+        
+        // Make the API call with retry
         let response: Response | null = null;
         let retryCount = 0;
+        const maxRetries = 1;
         
-        while (retryCount < 2) {
+        while (retryCount <= maxRetries) {
           try {
             response = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
@@ -185,101 +201,106 @@ export async function POST(req: Request) {
                 'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01'
               },
-              body: JSON.stringify(requestBody)
+              body: JSON.stringify(requestBody),
+              // Crucial for streaming to work in edge runtime
+              cache: 'no-store'
             });
             
-            if (response.ok) break;
-            
-            // Just retry once on any error
+            if (response && response.ok) break;
             retryCount++;
-            console.log(`Anthropic API error, retry ${retryCount}/1...`);
-            await new Promise(r => setTimeout(r, 1000));
+            
+            if (retryCount <= maxRetries) {
+              console.log(`Anthropic API error (${response?.status}), retry ${retryCount}/${maxRetries}`);
+              await new Promise(r => setTimeout(r, 1000));
+            }
           } catch (e) {
             console.error('Fetch error:', e);
             retryCount++;
+            if (retryCount <= maxRetries) {
+              await new Promise(r => setTimeout(r, 1000));
+            }
           }
         }
         
         if (!response || !response.ok) {
-          throw new Error(`Failed to get a response from Anthropic API: ${response?.status} ${response?.statusText}`);
+          throw new Error(`Failed to get response from Anthropic: ${response?.status}`);
         }
         
-        // Process AI Stream - SIMPLIFIED APPROACH
-        console.log('Start reading Anthropic stream...');
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let accumulatedText = '';
+        // Process the streaming response
+        if (!response.body) {
+          throw new Error('Response body is null');
+        }
         
-        // Send a keepalive ping
-        await writeAndFlush(': keepalive ping before streaming\n\n');
+        // Stream processing
+        const reader = response.body.getReader();
+        let buffer = '';
+        let completedStreamingContent = '';
         
-        try {
-          // Simplified stream processing
-          while (true) {
-            const { done, value } = await reader.read();
+        // Manual stream chunking
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log('Anthropic stream ended');
+            break;
+          }
+          
+          // Decode this chunk
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          
+          // Process complete lines
+          let lineEndIndex;
+          while ((lineEndIndex = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.substring(0, lineEndIndex);
+            buffer = buffer.substring(lineEndIndex + 1);
             
-            if (done) {
-              console.log('Stream reading complete');
-              break;
-            }
-            
-            const chunk = decoder.decode(value);
-            console.log(`Received chunk: ${chunk.length} bytes`);
-            
-            // Simple parsing - split by lines
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-              if (!line.trim() || !line.startsWith('data: ')) continue;
+            if (line.startsWith('data: ')) {
+              const dataContent = line.substring(6);
+              
+              // Handle completion
+              if (dataContent === '[DONE]') {
+                console.log('Received [DONE] from Anthropic');
+                continue;
+              }
               
               try {
-                const data = line.substring(6);
-                if (data === '[DONE]') continue;
+                const parsedData = JSON.parse(dataContent);
                 
-                const parsed = JSON.parse(data);
-                
-                // Handle content delta
-                if (parsed.type === 'content_block_delta' && 
-                    parsed.delta?.type === 'text_delta' && 
-                    parsed.delta?.text) {
+                // Extract the actual content delta
+                if (parsedData.type === 'content_block_delta' && 
+                    parsedData.delta?.type === 'text_delta' && 
+                    parsedData.delta?.text) {
                   
-                  accumulatedText += parsed.delta.text;
+                  const newContent = parsedData.delta.text;
+                  completedStreamingContent += newContent;
                   
-                  // Send immediately to client
-                  await writeAndFlush(JSON.stringify({ 
-                    type: 'content', 
-                    content: accumulatedText
-                  }) + '\n');
+                  // Send just the delta text as a content update
+                  await writeChunk(JSON.stringify({
+                    type: 'content',
+                    content: completedStreamingContent
+                  }));
                   
-                  // Also send a keepalive after each chunk
-                  await writeAndFlush(': keepalive during streaming\n\n');
+                  // Send a keepalive after content
+                  await writeChunk(': keepalive during streaming\n');
                 }
-              } catch (e) {
-                console.error('Error parsing stream data:', e);
+              } catch (parseError) {
+                console.error('Error parsing stream data:', parseError);
               }
             }
           }
-        } catch (streamError) {
-          console.error('Error processing AI stream:', streamError);
-          // Send the accumulated text anyway
-          if (accumulatedText) {
-            await writeAndFlush(JSON.stringify({ 
-              type: 'content', 
-              content: accumulatedText + "\n\n[Note: The response was cut short due to a technical issue]"
-            }) + '\n');
-          }
         }
         
-        // Send complete status
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'complete' as StreamingStatus,
+        // Complete status
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'complete',
           timestamp: Date.now()
-        }) + '\n');
+        }));
         
-        // Add final metadata
+        // Final metadata
         const totalTime = Date.now() - startTime;
-        const metadataJson = JSON.stringify({
+        await writeChunk('METADATA:' + JSON.stringify({
           searchResults: clientResults,
           query,
           analysis: searchResponse.analysis,
@@ -289,41 +310,43 @@ export async function POST(req: Request) {
           totalResults: searchResponse.results.length,
           provider: 'anthropic',
           model: 'claude-3-5-haiku-20241022'
-        });
-        
-        await writeAndFlush('METADATA:' + metadataJson + '\n');
+        }));
         
       } catch (error) {
         console.error('Processing error:', error);
         
-        // Send error to client
-        await writeAndFlush(JSON.stringify({ 
-          type: 'status', 
-          status: 'error' as StreamingStatus,
-          message: error instanceof Error ? error.message : String(error),
-          timestamp: Date.now()
-        }) + '\n');
+        try {
+          // Send error status
+          await writeChunk(JSON.stringify({
+            type: 'status',
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.error('Error sending error status:', e);
+        }
       } finally {
-        // Always close the writer when done
+        // Clean up
+        if (keepaliveInterval) {
+          clearInterval(keepaliveInterval);
+        }
+        
         try {
           await writer.close();
         } catch (e) {
           console.error('Error closing writer:', e);
         }
       }
-    })().catch(e => console.error('Unhandled error in stream processing:', e));
-    
-    // Return the readable stream immediately
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
+    })().catch(error => {
+      console.error('Unhandled error in stream processing:', error);
     });
+    
+    // Return the stream immediately
+    return createStreamResponse(stream.readable);
+    
   } catch (error) {
-    console.error('Error in request handler:', error);
+    console.error('Request handler error:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
