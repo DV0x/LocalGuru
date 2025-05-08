@@ -302,6 +302,7 @@ export async function POST(req: Request) {
                                 (buffer.includes('content_block_delta') || 
                                   buffer.includes('message_start'));
           
+          // Enhanced detection that first checks for SSE protocol and falls back to standard JSON
           if (hasSSEProtocol) {
             console.log('Detected raw SSE protocol format, using direct extraction');
             
@@ -327,64 +328,143 @@ export async function POST(req: Request) {
               buffer = '';
             }
           } else {
-            // Standard format processing - process complete lines
-            let lineEndIndex;
-            while ((lineEndIndex = buffer.indexOf('\n')) !== -1) {
-              const line = buffer.substring(0, lineEndIndex);
-              buffer = buffer.substring(lineEndIndex + 1);
-              
-              if (line.startsWith('data: ')) {
-                const dataContent = line.substring(6);
-                console.log(`Processing data content: ${dataContent.substring(0, 50)}...`);
+            // Special handler for local development format - direct JSON without data prefix
+            let jsonProcessed = false;
+            
+            // Look for complete JSON objects in the buffer (common in local development)
+            if (buffer.includes('{') && buffer.includes('}')) {
+              try {
+                const jsonStartIndex = buffer.indexOf('{');
+                const jsonEndIndex = buffer.lastIndexOf('}') + 1;
                 
-                // Handle completion
-                if (dataContent === '[DONE]') {
-                  console.log('Received [DONE] from Anthropic');
-                  continue;
+                if (jsonStartIndex >= 0 && jsonEndIndex > jsonStartIndex) {
+                  // Try to extract a complete JSON object
+                  const possibleJson = buffer.substring(jsonStartIndex, jsonEndIndex);
+                  
+                  try {
+                    const directData = JSON.parse(possibleJson);
+                    console.log('Found JSON object in buffer:', JSON.stringify(directData).substring(0, 100));
+                    
+                    // If this is a content update from local development
+                    if (directData.type === 'content' && 'content' in directData) {
+                      console.log('Found direct JSON content update');
+                      // Use the complete content (local might send the full content each time)
+                      completedStreamingContent = directData.content;
+                      
+                      await writeChunk(JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      }));
+                      
+                      await writeChunk(': keepalive during streaming\n');
+                      
+                      // Remove the processed JSON from buffer
+                      buffer = buffer.substring(jsonEndIndex);
+                      jsonProcessed = true;
+                    }
+                    // If this is a status message or other control message
+                    else if (directData.type && (directData.type === 'status' || directData.type === 'control')) {
+                      console.log('Found control message:', directData.type);
+                      
+                      // Just pass it through
+                      await writeChunk(JSON.stringify(directData));
+                      
+                      // Remove the processed JSON from buffer
+                      buffer = buffer.substring(jsonEndIndex);
+                      jsonProcessed = true;
+                    }
+                  } catch (parseError) {
+                    console.log('Buffer contains JSON-like content but failed to parse');
+                  }
+                }
+              } catch (e) {
+                console.error('Error handling direct JSON format:', e);
+              }
+            }
+            
+            // If we didn't process any JSON directly, continue with standard format processing
+            if (!jsonProcessed) {
+              // Standard format processing - process complete lines
+              let lineEndIndex;
+              while ((lineEndIndex = buffer.indexOf('\n')) !== -1) {
+                const line = buffer.substring(0, lineEndIndex);
+                buffer = buffer.substring(lineEndIndex + 1);
+                
+                // Additional check for raw JSON lines (no data prefix)
+                if (line.startsWith('{') && line.endsWith('}')) {
+                  try {
+                    const rawData = JSON.parse(line);
+                    console.log(`Found raw JSON line: ${line.substring(0, 50)}...`);
+                    
+                    if (rawData.type === 'content' && 'content' in rawData) {
+                      completedStreamingContent = rawData.content;
+                      
+                      await writeChunk(JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      }));
+                      
+                      await writeChunk(': keepalive during streaming\n');
+                      continue;
+                    }
+                  } catch (e) {
+                    console.log('Line looks like JSON but failed to parse');
+                  }
                 }
                 
-                try {
-                  const parsedData = JSON.parse(dataContent);
-                  console.log(`Data type: ${parsedData.type}`);
+                if (line.startsWith('data: ')) {
+                  const dataContent = line.substring(6);
+                  console.log(`Processing data content: ${dataContent.substring(0, 50)}...`);
                   
-                  // Extract the actual content delta - handle all possible formats
-                  if (parsedData.type === 'content_block_delta' && 
-                      parsedData.delta?.type === 'text_delta' && 
-                      parsedData.delta?.text) {
-                    
-                    const newContent = parsedData.delta.text;
-                    completedStreamingContent += newContent;
-                    console.log(`Adding content (now ${completedStreamingContent.length} chars): ${newContent.substring(0, 20)}...`);
-                    
-                    // Send content update with forced JSON format
-                    const contentUpdate = JSON.stringify({
-                      type: 'content',
-                      content: completedStreamingContent
-                    });
-                    
-                    await writeChunk(contentUpdate);
-                    
-                    // Send a keepalive after content
-                    await writeChunk(': keepalive during streaming\n');
-                  } 
-                  // Handle other message types
-                  else if (parsedData.type === 'content_block_start') {
-                    console.log('Content block started');
+                  // Handle completion
+                  if (dataContent === '[DONE]') {
+                    console.log('Received [DONE] from Anthropic');
+                    continue;
                   }
-                  else if (parsedData.type === 'message_start') {
-                    console.log('Message started');
-                  } 
-                  else if (parsedData.type === 'message_delta') {
-                    console.log('Message delta received');
-                  } 
-                  else if (parsedData.type === 'message_stop') {
-                    console.log('Message stopped');
+                  
+                  try {
+                    const parsedData = JSON.parse(dataContent);
+                    console.log(`Data type: ${parsedData.type}`);
+                    
+                    // Extract the actual content delta - handle all possible formats
+                    if (parsedData.type === 'content_block_delta' && 
+                        parsedData.delta?.type === 'text_delta' && 
+                        parsedData.delta?.text) {
+                      
+                      const newContent = parsedData.delta.text;
+                      completedStreamingContent += newContent;
+                      console.log(`Adding content (now ${completedStreamingContent.length} chars): ${newContent.substring(0, 20)}...`);
+                      
+                      // Send content update with forced JSON format
+                      const contentUpdate = JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      });
+                      
+                      await writeChunk(contentUpdate);
+                      
+                      // Send a keepalive after content
+                      await writeChunk(': keepalive during streaming\n');
+                    } 
+                    // Handle other message types
+                    else if (parsedData.type === 'content_block_start') {
+                      console.log('Content block started');
+                    }
+                    else if (parsedData.type === 'message_start') {
+                      console.log('Message started');
+                    } 
+                    else if (parsedData.type === 'message_delta') {
+                      console.log('Message delta received');
+                    } 
+                    else if (parsedData.type === 'message_stop') {
+                      console.log('Message stopped');
+                    }
+                    else {
+                      console.log(`Unknown event type: ${parsedData.type}`, JSON.stringify(parsedData));
+                    }
+                  } catch (parseError) {
+                    console.error('Error parsing stream data:', parseError, 'Line:', line);
                   }
-                  else {
-                    console.log(`Unknown event type: ${parsedData.type}`, JSON.stringify(parsedData));
-                  }
-                } catch (parseError) {
-                  console.error('Error parsing stream data:', parseError, 'Line:', line);
                 }
               }
             }
