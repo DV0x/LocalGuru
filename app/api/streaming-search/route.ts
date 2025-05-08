@@ -263,10 +263,11 @@ export async function POST(req: Request) {
         let buffer = '';
         let completedStreamingContent = '';
         
-        // Add explicit debugging for stream processing
-        console.log('Starting to process Anthropic stream...');
+        // Add environment detection
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        console.log(`Environment detected: ${isDevelopment ? 'development' : 'production'}`);
         
-        // Manual stream chunking
+        // Manual stream chunking with environment-specific handling
         while (true) {
           const { done, value } = await reader.read();
           
@@ -277,175 +278,139 @@ export async function POST(req: Request) {
           
           // Decode this chunk
           const chunk = decoder.decode(value, { stream: true });
-          console.log(`Received chunk of ${chunk.length} bytes:`, chunk.substring(0, 100));
+          console.log(`Received chunk of ${chunk.length} bytes`);
           buffer += chunk;
           
-          // Process content based on detected format
           let processed = false;
           
-          // 1. First try SSE protocol (production environment)
-          if (buffer.includes('event:') && 
-             (buffer.includes('content_block_delta') || buffer.includes('message_start'))) {
-            console.log('Attempting to process as SSE format');
-            
-            const lines = buffer.split('\n');
-            for (const line of lines) {
-              if (line.includes('event: content_block_delta')) {
-                // Find the content in data: lines after this event
-                const dataStartIndex = buffer.indexOf('data:', buffer.indexOf(line));
-                if (dataStartIndex !== -1) {
-                  const dataLine = buffer.substring(dataStartIndex).split('\n')[0];
-                  if (dataLine.startsWith('data: ')) {
-                    try {
-                      const dataContent = dataLine.substring(6);
-                      if (dataContent !== '[DONE]') {
-                        const parsedData = JSON.parse(dataContent);
-                        if (parsedData.delta?.text) {
-                          completedStreamingContent += parsedData.delta.text;
-                          await writeChunk(JSON.stringify({
-                            type: 'content',
-                            content: completedStreamingContent
-                          }));
-                          processed = true;
-                        }
-                      }
-                    } catch (e) {
-                      console.log('Failed to process SSE data line:', e);
-                    }
-                  }
-                }
-              }
-            }
-            
-            // If we processed content via SSE, clean up buffer
-            if (processed) {
-              // Keep only the last line which might be incomplete
-              const lines = buffer.split('\n');
-              buffer = lines[lines.length - 1];
-              await writeChunk(': keepalive after SSE processing\n');
-              continue;
-            }
-          }
-          
-          // 2. Try direct raw content extraction (works in various environments)
-          const contentMatch = buffer.match(/content_block_delta[^{]*({[^}]+})/);
-          if (!processed && contentMatch && contentMatch[1]) {
-            try {
-              console.log('Found raw content delta, attempting to extract');
-              const deltaJson = JSON.parse(contentMatch[1]);
-              if (deltaJson.text) {
-                completedStreamingContent += deltaJson.text;
-                await writeChunk(JSON.stringify({
-                  type: 'content',
-                  content: completedStreamingContent
-                }));
+          // Environment-specific handling
+          if (isDevelopment) {
+            // LOCAL DEVELOPMENT ENVIRONMENT: Handle JSON objects
+            if (buffer.includes('{') && buffer.includes('}')) {
+              try {
+                // Find complete JSON objects
+                const jsonStartIndex = buffer.indexOf('{');
+                const jsonEndIndex = buffer.lastIndexOf('}') + 1;
                 
-                // Remove processed content
-                buffer = buffer.substring(buffer.indexOf(contentMatch[0]) + contentMatch[0].length);
-                processed = true;
-                await writeChunk(': keepalive after raw content processing\n');
-                continue;
-              }
-            } catch (e) {
-              console.log('Failed to process raw content match:', e);
-            }
-          }
-          
-          // 3. Try direct JSON objects (local development common format)
-          if (!processed && buffer.includes('{') && buffer.includes('}')) {
-            try {
-              console.log('Attempting to process as JSON object');
-              
-              // Find complete JSON objects
-              const jsonStartIndex = buffer.indexOf('{');
-              const jsonEndIndex = buffer.lastIndexOf('}') + 1;
-              
-              if (jsonStartIndex >= 0 && jsonEndIndex > jsonStartIndex) {
-                const possibleJson = buffer.substring(jsonStartIndex, jsonEndIndex);
-                
-                try {
-                  const data = JSON.parse(possibleJson);
-                  console.log('Parsed JSON object of type:', data.type);
+                if (jsonStartIndex >= 0 && jsonEndIndex > jsonStartIndex) {
+                  const possibleJson = buffer.substring(jsonStartIndex, jsonEndIndex);
                   
-                  if (data.type === 'content' && typeof data.content === 'string') {
-                    // This is from local development - complete content
-                    completedStreamingContent = data.content;
-                    await writeChunk(JSON.stringify({
-                      type: 'content',
-                      content: completedStreamingContent
-                    }));
+                  try {
+                    const data = JSON.parse(possibleJson);
+                    console.log('Parsed message type:', data.type);
                     
-                    // Remove the processed JSON
-                    buffer = buffer.substring(jsonEndIndex);
-                    processed = true;
-                    await writeChunk(': keepalive after JSON processing\n');
-                    continue;
-                  }
-                  else if (data.type === 'status' || data.type === 'control') {
+                    // Handle content events
+                    if (data.type === 'content_block_delta' && data.delta?.text) {
+                      completedStreamingContent += data.delta.text;
+                      await writeChunk(JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      }));
+                      processed = true;
+                    }
+                    // Also handle already completed content
+                    else if (data.type === 'content' && typeof data.content === 'string') {
+                      completedStreamingContent = data.content;
+                      await writeChunk(JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      }));
+                      processed = true;
+                    }
                     // Pass through status messages
-                    await writeChunk(JSON.stringify(data));
-                    buffer = buffer.substring(jsonEndIndex);
-                    processed = true;
-                    continue;
+                    else if (data.type === 'status') {
+                      await writeChunk(JSON.stringify(data));
+                      processed = true;
+                    }
+                    
+                    // Remove the processed part of the buffer
+                    if (processed) {
+                      buffer = buffer.substring(jsonEndIndex);
+                      await writeChunk(': keepalive\n');
+                    }
+                  } catch (e) {
+                    // Not a complete JSON object, continue collecting
+                    console.log('Incomplete JSON object in buffer');
                   }
-                } catch (parseErr) {
-                  console.log('JSON parsing failed, not a complete JSON object');
+                }
+              } catch (e) {
+                console.error('Error processing local format:', e);
+              }
+            }
+            
+            // Also process any standard data: lines
+            if (!processed) {
+              let lineEndIndex;
+              while ((lineEndIndex = buffer.indexOf('\n')) !== -1) {
+                const line = buffer.substring(0, lineEndIndex);
+                buffer = buffer.substring(lineEndIndex + 1);
+                
+                if (line.startsWith('data: ')) {
+                  try {
+                    const dataContent = line.substring(6);
+                    if (dataContent === '[DONE]') continue;
+                    
+                    const parsedData = JSON.parse(dataContent);
+                    if (parsedData.type === 'content_block_delta' && 
+                        parsedData.delta?.text) {
+                      
+                      completedStreamingContent += parsedData.delta.text;
+                      await writeChunk(JSON.stringify({
+                        type: 'content',
+                        content: completedStreamingContent
+                      }));
+                      processed = true;
+                    }
+                  } catch (e) {
+                    // Skip lines we can't parse
+                  }
                 }
               }
-            } catch (e) {
-              console.log('Failed in JSON object processing:', e);
             }
-          }
-          
-          // 4. Process standard data: lines (Anthropic standard format)
-          if (!processed) {
-            const lines = buffer.split('\n');
-            let newBuffer = '';
-            let processedAnyLines = false;
+          } else {
+            // PRODUCTION ENVIRONMENT: Process data lines (standard SSE format)
+            let lineEndIndex;
+            let processedAny = false;
             
-            for (const line of lines) {
+            while ((lineEndIndex = buffer.indexOf('\n')) !== -1) {
+              const line = buffer.substring(0, lineEndIndex);
+              buffer = buffer.substring(lineEndIndex + 1);
+              
+              // Process data lines
               if (line.startsWith('data: ')) {
                 try {
-                  const content = line.substring(6);
-                  if (content === '[DONE]') {
-                    console.log('Received [DONE] marker');
-                    processedAnyLines = true;
-                    continue;
-                  }
+                  const dataContent = line.substring(6);
+                  if (dataContent === '[DONE]') continue;
                   
-                  const data = JSON.parse(content);
+                  const parsedData = JSON.parse(dataContent);
                   
-                  if (data.type === 'content_block_delta' && data.delta?.text) {
-                    completedStreamingContent += data.delta.text;
+                  // Extract delta content
+                  if (parsedData.type === 'content_block_delta' && 
+                      parsedData.delta?.text) {
+                    
+                    completedStreamingContent += parsedData.delta.text;
                     await writeChunk(JSON.stringify({
                       type: 'content',
                       content: completedStreamingContent
                     }));
-                    processedAnyLines = true;
+                    processedAny = true;
                   }
                 } catch (e) {
-                  // Keep the line if we couldn't process it
-                  newBuffer += line + '\n';
+                  console.log('Error parsing data line:', e);
                 }
-              } else {
-                // Keep lines that don't start with data:
-                newBuffer += line + '\n';
               }
             }
             
-            if (processedAnyLines) {
-              buffer = newBuffer;
-              await writeChunk(': keepalive after standard format processing\n');
+            if (processedAny) {
+              await writeChunk(': keepalive\n');
               processed = true;
             }
           }
           
-          // If we haven't processed anything but the buffer is getting large,
-          // log and truncate to prevent memory issues
+          // Prevent buffer overflow
           if (!processed && buffer.length > 10000) {
-            console.log('Buffer growing too large without processing, truncating. Buffer sample:', 
-                        buffer.substring(0, 200) + '...' + buffer.substring(buffer.length - 200));
-            buffer = buffer.substring(buffer.length - 5000); // Keep the last 5000 chars
+            console.log('Buffer growing too large, truncating');
+            buffer = buffer.substring(buffer.length - 5000);
           }
         }
         
