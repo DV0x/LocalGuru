@@ -251,8 +251,13 @@ export function MarkdownRenderer({
                   rel="noopener noreferrer"
                   className="citation-link"
                   onClick={(e) => {
-                    if (!sourceUrl || sourceUrl === "#") {
+                    // Only prevent navigation if there's no URL
+                    if (!sourceResult?.url || sourceUrl === "#") {
                       e.preventDefault(); // Prevent navigation if no URL
+                      console.log('Citation clicked but no URL available');
+                    } else {
+                      console.log('Citation redirecting to:', sourceUrl);
+                      // Let the default behavior happen (navigation to URL)
                     }
                   }}
                   onMouseEnter={(e) => {
