@@ -2,15 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ArrowUp, Square } from "lucide-react";
+import { FloatingSearchBarProps } from "@/app/lib/types/search-components";
 
-interface FloatingSearchBarProps {
-  onSearch: (query: string) => void;
-  visible: boolean;
-  isLoading?: boolean;
-  onStop?: () => void;
-}
-
-export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop }: FloatingSearchBarProps) {
+export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop, onLocationChange, initialLocation }: FloatingSearchBarProps) {
   const [query, setQuery] = useState("");
   const [animation, setAnimation] = useState<"entering" | "exiting" | "idle">("idle");
   const [isVisible, setIsVisible] = useState(false);

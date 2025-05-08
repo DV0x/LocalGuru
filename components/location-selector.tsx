@@ -4,12 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { MapPin, ChevronDown, X } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { createPortal } from "react-dom"
-
-interface LocationSelectorProps {
-  onLocationChange?: (location: string) => void
-  initialLocation?: string
-  variant?: "default" | "compact" | "ultra-compact"
-}
+import { LocationSelectorProps } from "@/app/lib/types/search-components"
 
 export function LocationSelector({ 
   onLocationChange, 

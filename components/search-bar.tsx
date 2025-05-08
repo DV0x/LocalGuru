@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, type FormEvent } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, ArrowUpCircle } from "lucide-react";
+import { LocationSelector } from "./location-selector";
+import { SearchBarProps } from "@/app/lib/types/search-components";
 
 // Add TypeScript declarations for the Web Speech API
 declare global {
@@ -11,19 +13,20 @@ declare global {
   }
 }
 
-interface SearchBarProps {
-  onSearch: (query: string) => void;
-  initialValue?: string;
-  isLoading?: boolean;
-  onStop?: () => void;
-}
-
-export function SearchBar({ onSearch, initialValue = "", isLoading = false, onStop }: SearchBarProps) {
+export function SearchBar({ 
+  onSearch, 
+  initialValue = "", 
+  isLoading = false, 
+  onStop,
+  onLocationChange,
+  initialLocation
+}: SearchBarProps) {
   const [query, setQuery] = useState(initialValue);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [currentPlaceholder, setCurrentPlaceholder] = useState("Search...");
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState(!initialValue);
   
   // Example search queries for animation
   const exampleQueries = [
@@ -36,10 +39,32 @@ export function SearchBar({ onSearch, initialValue = "", isLoading = false, onSt
     "Best Asian restaurants",
   ];
 
+  // Auto-resize textarea based on content
+  const autoResizeTextarea = () => {
+    if (textareaRef.current) {
+      // Reset height to auto to get the correct scrollHeight
+      textareaRef.current.style.height = 'auto';
+      // Set the height based on scrollHeight (content height)
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
+    }
+  };
+
+  // Handle input change
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setQuery(text);
+    setShowPlaceholder(!text);
+    autoResizeTextarea();
+  };
+
   // Animate placeholder with smooth transitions
   useEffect(() => {
-    if (query) return; // Don't animate if user has entered text
-
+    if (query) {
+      setShowPlaceholder(false);
+      return;
+    }
+    
+    setShowPlaceholder(true);
     let currentIndex = 0;
     
     const rotatePlaceholders = () => {
@@ -50,10 +75,10 @@ export function SearchBar({ onSearch, initialValue = "", isLoading = false, onSt
         currentIndex = (currentIndex + 1) % exampleQueries.length;
         setCurrentPlaceholder(exampleQueries[currentIndex]);
         setIsTransitioning(false);
-      }, 300); // Reduced from 600ms to 300ms
+      }, 300);
     };
     
-    // Change placeholder text every 3 seconds (reduced from 4s)
+    // Change placeholder text every 3 seconds
     const intervalId = setInterval(rotatePlaceholders, 3000);
     
     // Initialize with first example
@@ -64,15 +89,24 @@ export function SearchBar({ onSearch, initialValue = "", isLoading = false, onSt
 
   // Focus input when component mounts
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      
+      // Set initial content if there's an initial value
+      if (initialValue) {
+        textareaRef.current.value = initialValue;
+        autoResizeTextarea();
+      }
     }
-  }, []);
+  }, [initialValue]);
 
   // Sync with initialValue when it changes
   useEffect(() => {
-    if (initialValue !== undefined) {
+    if (initialValue !== undefined && textareaRef.current) {
       setQuery(initialValue);
+      textareaRef.current.value = initialValue;
+      setShowPlaceholder(!initialValue);
+      autoResizeTextarea();
     }
   }, [initialValue]);
 
@@ -103,51 +137,76 @@ export function SearchBar({ onSearch, initialValue = "", isLoading = false, onSt
       setIsStopping(false);
     }, 300);
   };
+  
+  // Handle key press for textarea (Enter to submit)
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (query.trim() && !isLoading) {
+        onSearch(query);
+      }
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto">
       <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          className="search-input pr-16 text-base"
-          placeholder={currentPlaceholder}
+        <textarea 
+          ref={textareaRef}
+          className="search-input text-base w-full resize-none bg-white"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search query"
-          autoFocus
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           disabled={isLoading}
+          aria-label="Search query"
+          rows={2} 
+          placeholder=""
+          style={{ paddingBottom: '40px' }} 
         />
+        
+        {showPlaceholder && (
+          <div className="absolute top-3 left-3 text-gray-400 pointer-events-none text-base" 
+               style={{
+                 opacity: isTransitioning ? 0 : 0.75,
+                 transform: `translateY(${isTransitioning ? '5px' : '0'})`,
+                 transition: 'opacity 0.3s ease, transform 0.3s ease'
+               }}>
+            {currentPlaceholder}
+          </div>
+        )}
           
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        <div className="absolute right-4 bottom-3.5 flex items-center gap-1 z-20">
           {isLoading ? (
             <button 
               type="button" 
-              className={`offset-btn !py-1 !px-3 text-sm ${isStopping ? 'bg-red-700' : 'bg-red-500'} transform transition-all duration-150 ${isStopping ? 'scale-95' : 'scale-100'}`}
+              className={`search-button bg-red-500 ${isStopping ? 'scale-95' : 'scale-100'}`}
               onClick={handleStopSearch}
               aria-label="Stop search"
             >
-              <Square size={16} className="text-white" />
+              <Square size={14} className="text-black" />
             </button>
           ) : (
             <button 
               type="submit" 
-              className="offset-btn !py-1 !px-3 text-sm" 
+              className="search-button" 
               disabled={!query.trim()}
             >
-              <ArrowUp size={18} />
+              <ArrowUp size={16} />
             </button>
           )}
         </div>
-      </div>
 
-      <style jsx>{`
-        input::placeholder {
-          transition: opacity 0.3s ease, transform 0.3s ease;
-          opacity: ${isTransitioning ? 0 : 0.75};
-          transform: translateY(${isTransitioning ? '5px' : '0'});
-        }
-      `}</style>
+        {/* Location Selector Pill */}
+        {onLocationChange && (
+          <div className="absolute left-3 bottom-3 z-20">
+            <LocationSelector 
+              onLocationChange={onLocationChange} 
+              initialLocation={initialLocation}
+              variant="ultra-compact"
+            />
+          </div>
+        )}
+      </div>
     </form>
   );
 } 
