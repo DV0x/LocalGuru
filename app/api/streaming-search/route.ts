@@ -258,6 +258,25 @@ export async function POST(req: Request) {
           throw new Error('Response body is null');
         }
         
+        // Add special handling for raw content option
+        const tryToExtractDirectContent = (line: string): string | false => {
+          // Very simple check to avoid sending non-text content
+          if (line.includes('{') && line.includes('}')) return false;
+          
+          // Remove common prefixes that might be in the raw data
+          const cleanLine = line.replace(/^data:\s*/, '').trim();
+          
+          // Only extract if it looks like natural text (not JSON)
+          if (cleanLine && 
+              !cleanLine.startsWith('{') && 
+              !cleanLine.startsWith('[') && 
+              cleanLine !== '[DONE]') {
+            console.log('Using direct content extraction for:', cleanLine.substring(0, 30));
+            return cleanLine;
+          }
+          return false;
+        };
+        
         // Stream processing
         const reader = response.body.getReader();
         let buffer = '';
@@ -286,6 +305,20 @@ export async function POST(req: Request) {
             const line = buffer.substring(0, lineEndIndex);
             buffer = buffer.substring(lineEndIndex + 1);
             
+            // Direct raw content extraction as fallback (for compatibility)
+            const directContent = tryToExtractDirectContent(line);
+            if (directContent) {
+              completedStreamingContent += directContent;
+              
+              await writeChunk(JSON.stringify({
+                type: 'content',
+                content: completedStreamingContent
+              }));
+              
+              await writeChunk(': keepalive during streaming\n');
+              continue;
+            }
+            
             if (line.startsWith('data: ')) {
               const dataContent = line.substring(6);
               console.log(`Processing data content: ${dataContent.substring(0, 50)}...`);
@@ -300,7 +333,7 @@ export async function POST(req: Request) {
                 const parsedData = JSON.parse(dataContent);
                 console.log(`Data type: ${parsedData.type}`);
                 
-                // Extract the actual content delta
+                // Extract the actual content delta - handle all possible formats
                 if (parsedData.type === 'content_block_delta' && 
                     parsedData.delta?.type === 'text_delta' && 
                     parsedData.delta?.text) {
@@ -319,16 +352,58 @@ export async function POST(req: Request) {
                   
                   // Send a keepalive after content
                   await writeChunk(': keepalive during streaming\n');
-                } else if (parsedData.type === 'message_start') {
+                } 
+                // Handle completion object type
+                else if (parsedData.type === 'content_block_start') {
+                  console.log('Content block started');
+                }
+                // Handle the Claude 3 Opus/Sonnet response format (direct content field)
+                else if (parsedData.content && typeof parsedData.content === 'string') {
+                  console.log('Found direct content field, using alternative format');
+                  
+                  completedStreamingContent += parsedData.content;
+                  console.log(`Adding alt content (now ${completedStreamingContent.length} chars): ${parsedData.content.substring(0, 20)}...`);
+                  
+                  await writeChunk(JSON.stringify({
+                    type: 'content',
+                    content: completedStreamingContent
+                  }));
+                  
+                  await writeChunk(': keepalive during streaming\n');
+                }
+                // Handle older Claude message delta format
+                else if (parsedData.completion && typeof parsedData.completion === 'string') {
+                  console.log('Found completion field, using legacy format');
+                  
+                  completedStreamingContent += parsedData.completion;
+                  
+                  await writeChunk(JSON.stringify({
+                    type: 'content',
+                    content: completedStreamingContent
+                  }));
+                  
+                  await writeChunk(': keepalive during streaming\n');
+                }
+                else if (parsedData.type === 'message_start') {
                   console.log('Message started');
                 } else if (parsedData.type === 'message_delta') {
                   console.log('Message delta received');
-                } else if (parsedData.type === 'content_block_start') {
-                  console.log('Content block started');
+                  
+                  // Check if there's text content in the message delta
+                  if (parsedData.delta && parsedData.delta.text) {
+                    completedStreamingContent += parsedData.delta.text;
+                    
+                    await writeChunk(JSON.stringify({
+                      type: 'content',
+                      content: completedStreamingContent
+                    }));
+                    
+                    await writeChunk(': keepalive during streaming\n');
+                  }
                 } else if (parsedData.type === 'message_stop') {
                   console.log('Message stopped');
                 } else {
-                  console.log(`Unknown event type: ${parsedData.type}`);
+                  console.log(`Unknown event type: ${parsedData.type}`, JSON.stringify(parsedData));
                 }
               } catch (parseError) {
                 console.error('Error parsing stream data:', parseError, 'Line:', line);
