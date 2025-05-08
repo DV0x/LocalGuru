@@ -10,6 +10,7 @@ import { validateRequestBody } from '@/app/lib/validators/validate-request';
  */
 export const runtime = 'edge';
 export const preferredRegion = 'auto';
+export const fetchCache = 'force-no-store'; // Add force-no-store to prevent caching
 
 /**
  * Streaming search endpoint - full implementation
@@ -62,6 +63,21 @@ export async function POST(req: Request) {
         
         // Create an AbortController for Anthropic API calls
         const anthropicController = new AbortController();
+        
+        // Setup heartbeat/keepalive to prevent connection timeouts
+        const keepAliveInterval = setInterval(() => {
+          if (!isAborted) {
+            try {
+              controller.enqueue(encoder.encode(': keepalive\n\n')); // SSE comment for keepalive
+              console.log('Sent keepalive ping');
+            } catch (e) {
+              console.error('Error sending keepalive:', e);
+              clearInterval(keepAliveInterval);
+            }
+          } else {
+            clearInterval(keepAliveInterval);
+          }
+        }, 15000); // Send keepalive every 15 seconds
         
         try {
           // Setup abort handler for client disconnection
@@ -259,10 +275,13 @@ export async function POST(req: Request) {
                 headers: {
                   'Content-Type': 'application/json',
                   'x-api-key': apiKey,
-                  'anthropic-version': '2023-06-01'
+                  'anthropic-version': '2023-06-01',
+                  'Connection': 'keep-alive' // Explicitly keep connection alive
                 },
                 body: JSON.stringify(requestBody),
-                signal: anthropicController.signal // Add abort signal
+                signal: anthropicController.signal, // Add abort signal
+                cache: 'no-store', // Bypass cache
+                keepalive: true // Keep connection alive
               });
               
               // If we got a success response, break out of the retry loop
@@ -313,6 +332,9 @@ export async function POST(req: Request) {
           let accumulatedText = '';
           
           console.log('Starting to process Anthropic stream...');
+          
+          // Send a keepalive immediately before starting stream processing
+          controller.enqueue(encoder.encode(': starting stream\n\n'));
           
           while (true) {
             // Check if the request has been aborted
@@ -457,16 +479,21 @@ export async function POST(req: Request) {
           
           // Close the stream
           controller.close();
+        } finally {
+          // Clean up heartbeat interval
+          clearInterval(keepAliveInterval);
         }
       }
     });
     
-    // Return the stream response
+    // Return the stream response with enhanced headers for Edge
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no', // Prevents Nginx buffering
+        'Transfer-Encoding': 'chunked' // Explicitly enable chunked transfer
       },
     });
   } catch (error) {
