@@ -199,8 +199,6 @@ export default function Home() {
           visible={showFloatingSearch}
           isLoading={isSearching}
           onStop={handleStopSearch}
-          onLocationChange={handleLocationChange}
-          initialLocation={selectedLocation}
         />
       )}
 

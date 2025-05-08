@@ -14,8 +14,6 @@ export interface FloatingSearchBarProps {
   visible: boolean;
   isLoading?: boolean;
   onStop?: () => void;
-  onLocationChange?: (location: string) => void;
-  initialLocation?: string;
 }
 
 export interface LocationSelectorProps {

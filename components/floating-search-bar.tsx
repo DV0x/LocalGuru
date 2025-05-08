@@ -4,9 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { FloatingSearchBarProps } from "@/app/lib/types/search-components";
 import styles from "./search-styles.module.css";
-import { LocationSelector } from "./location-selector";
 
-export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop, onLocationChange, initialLocation }: FloatingSearchBarProps) {
+export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop }: FloatingSearchBarProps) {
   const [query, setQuery] = useState("");
   const [animation, setAnimation] = useState<"entering" | "exiting" | "idle">("idle");
   const [isVisible, setIsVisible] = useState(false);
@@ -168,17 +167,6 @@ export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop
               </button>
             )}
           </div>
-          
-          {/* Location Selector Pill */}
-          {onLocationChange && (
-            <div className="absolute left-3 bottom-3 z-20">
-              <LocationSelector 
-                onLocationChange={onLocationChange} 
-                initialLocation={initialLocation}
-                variant="ultra-compact"
-              />
-            </div>
-          )}
         </div>
       </form>
       
