@@ -126,8 +126,8 @@ importers:
         specifier: ^8.6.0
         version: 8.6.0(react@18.3.1)
       framer-motion:
-        specifier: ^12.7.4
-        version: 12.9.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^12.10.1
+        version: 12.10.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -1977,8 +1977,8 @@ packages:
   fraction.js@4.3.7:
     resolution: {integrity: sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==}
 
-  framer-motion@12.9.4:
-    resolution: {integrity: sha512-yaeGDmGQ3eCQEwZ95/pRQMaSh/Q4E2CK6JYOclG/PdjyQad0MULJ+JFVV8911Fl5a6tF6o0wgW8Dpl5Qx4Adjg==}
+  framer-motion@12.10.3:
+    resolution: {integrity: sha512-0uhqfcq4fmzCNV2lJAVAgrWHP4aegzELNd874AxyF3JeIpdUnOXRRJn2AYXnlrrV3rvgZOPBN9Tcjm1VnjZmPA==}
     peerDependencies:
       '@emotion/is-prop-valid': '*'
       react: ^18.0.0 || ^19.0.0
@@ -2519,8 +2519,8 @@ packages:
     resolution: {integrity: sha512-qOOzS1cBTWYF4BH8fVePDBOO9iptMnGUEZwNc/cMWnTV2nVLZ7VoNWEPHkYczZA0pdoA7dl6e7FL659nX9S2aw==}
     engines: {node: '>=16 || 14 >=14.17'}
 
-  motion-dom@12.9.4:
-    resolution: {integrity: sha512-25TWkQPj5I18m+qVjXGtCsxboY11DaRC5HMjd29tHKExazW4Zf4XtAagBdLpyKsVuAxEQ6cx5/E4AB21PFpLnQ==}
+  motion-dom@12.10.3:
+    resolution: {integrity: sha512-eSkiFTmHB6NlAMQISXPHrwJbqdxlaDXV5R+5oXu18tMgEIblLybLJc7Jq5L+byoE2uEG07rXvDdzHYzHd03ywQ==}
 
   motion-utils@12.9.4:
     resolution: {integrity: sha512-BW3I65zeM76CMsfh3kHid9ansEJk9Qvl+K5cu4DVHKGsI52n76OJ4z2CUJUV+Mn3uEP9k1JJA3tClG0ggSrRcg==}
@@ -5417,9 +5417,9 @@ snapshots:
 
   fraction.js@4.3.7: {}
 
-  framer-motion@12.9.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  framer-motion@12.10.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
-      motion-dom: 12.9.4
+      motion-dom: 12.10.3
       motion-utils: 12.9.4
       tslib: 2.8.1
     optionalDependencies:
@@ -6115,7 +6115,7 @@ snapshots:
 
   minipass@7.1.2: {}
 
-  motion-dom@12.9.4:
+  motion-dom@12.10.3:
     dependencies:
       motion-utils: 12.9.4
 
