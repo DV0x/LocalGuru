@@ -140,7 +140,6 @@ export default function Home() {
             <Compass className="h-6 w-6" />
             <span className="font-bold text-xl">JUSTLOCAL.AI</span>
           </div>
-          <LocationSelector onLocationChange={handleLocationChange} />
         </div>
       </header>
 
@@ -150,7 +149,7 @@ export default function Home() {
           {/* Hero section - only show if no results */}
           {(!content && !isLoading && status !== "searching" && status !== "generating" && status !== "search_complete" && status !== "complete") ? (
             <div className="neo-card p-5 sm:p-8 max-w-4xl mx-auto transform -translate-y-12">
-              <h1 className="text-3xl sm:text-5xl font-black mb-5 sm:mb-8 tracking-tight text-center">What can I help you to discover?</h1>
+              <h1 className="text-3xl sm:text-4xl font-medium mb-5 sm:mb-8 tracking-tight text-center">What can I help you discover?</h1>
 
               <div className="overflow-hidden w-full">
                 <SearchBar 
@@ -158,12 +157,14 @@ export default function Home() {
                   initialValue={searchQuery} 
                   isLoading={isSearching}
                   onStop={handleStopSearch}
+                  onLocationChange={handleLocationChange}
+                  initialLocation={selectedLocation}
                 />
               </div>
             </div>
           ) : (
             <div className="neo-card p-5 sm:p-8 mb-8 max-w-4xl mx-auto mt-8">
-              <h1 className="text-3xl sm:text-5xl font-black mb-5 sm:mb-8 tracking-tight text-center">What can I help you to discover?</h1>
+              <h1 className="text-3xl sm:text-4xl font-medium mb-5 sm:mb-8 tracking-tight text-center">What can I help you discover?</h1>
 
               <div className="overflow-hidden w-full">
                 <SearchBar 
@@ -171,6 +172,8 @@ export default function Home() {
                   initialValue={searchQuery} 
                   isLoading={isSearching}
                   onStop={handleStopSearch}
+                  onLocationChange={handleLocationChange}
+                  initialLocation={selectedLocation}
                 />
               </div>
             </div>
@@ -196,6 +199,8 @@ export default function Home() {
           visible={showFloatingSearch}
           isLoading={isSearching}
           onStop={handleStopSearch}
+          onLocationChange={handleLocationChange}
+          initialLocation={selectedLocation}
         />
       )}
 

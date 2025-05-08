@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { createPortal } from 'react-dom';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
 // Type for code component props
 interface CodeProps extends React.HTMLAttributes<HTMLElement> {
@@ -38,16 +39,7 @@ export function MarkdownRenderer({
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{top: number, left: number} | null>(null);
   const [isMounted, setIsMounted] = useState(false);
-  
-  // Portal setup - we need to make sure we're on the client
-  useEffect(() => {
-    setIsMounted(true);
-    
-    // Clean up function
-    return () => {
-      setIsMounted(false);
-    };
-  }, []);
+  const [isSourcesOpen, setIsSourcesOpen] = useState(false);
   
   // Create a mapping of unique sources
   const sourceMap = new Map<string, number>();
@@ -75,12 +67,21 @@ export function MarkdownRenderer({
       const uniqueIndex = sourceMap.get(sourceId);
       
       if (uniqueIndex !== undefined) {
-        return `[${uniqueIndex + 1}](#ref-${uniqueIndex + 1})`;
+        // Use standard markdown link format which ReactMarkdown will properly handle
+        return `[${refNumber}](#source-${refNumber})`;
       }
       
       return match;
     }
   );
+  
+  // Don't automatically add sources - we'll add them manually
+  const contentWithoutSources = processedContent || '';
+  
+  // Function to check if the content has citations
+  const hasCitations = () => {
+    return (/\[\d+\]/).test(contentWithoutSources);
+  };
   
   // Counter for generating unique IDs
   let citationCounter = 0;
@@ -90,7 +91,7 @@ export function MarkdownRenderer({
     if (!isMounted || !tooltipPosition || !activeReference) return null;
     
     const refNumber = activeReference;
-    const sourceData = uniqueSources[parseInt(refNumber) - 1];
+    const sourceData = searchResults[parseInt(refNumber) - 1];
     
     if (!sourceData) return null;
     
@@ -134,23 +135,77 @@ export function MarkdownRenderer({
             <div className="text-zinc-300 text-xs mb-2">
               {sourceData.snippet}
             </div>
-            {sourceData.url && (
-              <a 
-                href={sourceData.url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-indigo-400 text-xs hover:underline inline-flex items-center"
-              >
-                View source
-                <svg className="w-3 h-3 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </a>
-            )}
+            <div className="flex items-center mt-3 pt-2 border-t border-zinc-700">
+              {sourceData.url ? (
+                <span className="text-zinc-400 text-xs italic">Click citation to open source</span>
+              ) : (
+                <span className="text-zinc-400 text-xs italic">Source has no URL</span>
+              )}
+            </div>
           </div>
         </div>
       </div>,
       document.body
+    );
+  };
+  
+  // Only keep the isMounted effect
+  useEffect(() => {
+    setIsMounted(true);
+    
+    // Clean up function
+    return () => {
+      setIsMounted(false);
+    };
+  }, []);
+  
+  // Render sources component separately
+  const renderSourcesSection = () => {
+    if (!searchResults.length) return null;
+    
+    return (
+      <div className="sources-container mt-8">
+        <button 
+          onClick={() => setIsSourcesOpen(!isSourcesOpen)}
+          className="flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors w-full justify-between border-t pt-3"
+        >
+          <span>Sources ({searchResults.length})</span>
+          {isSourcesOpen ? 
+            <ChevronUp size={16} className="ml-2" /> : 
+            <ChevronDown size={16} className="ml-2" />
+          }
+        </button>
+        
+        {isSourcesOpen && (
+          <div className="mt-3 grid gap-2 text-sm">
+            {searchResults.map((result, index) => {
+              const sourceUrl = result.url || "#";
+              const sourceTitle = result.title || `Source ${index + 1}`;
+              const domain = result.url ? new URL(result.url).hostname.replace(/^www\./, '') : "";
+              
+              return (
+                <div key={`source-${index + 1}`} id={`source-${index + 1}`} className="source-item">
+                  <div className="flex items-start space-x-2">
+                    <span className="font-medium text-xs bg-indigo-100 text-indigo-800 rounded-full h-5 min-w-5 flex items-center justify-center px-1">{index + 1}</span>
+                    <div className="flex-1 leading-tight">
+                      <a 
+                        href={sourceUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="font-medium text-indigo-600 hover:underline flex items-center"
+                      >
+                        {sourceTitle.length > 60 ? sourceTitle.substring(0, 60) + '...' : sourceTitle}
+                        <ExternalLink size={12} className="ml-1 inline-block flex-shrink-0" />
+                      </a>
+                      {domain && <div className="text-xs text-gray-500">{domain}</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   };
   
@@ -183,9 +238,64 @@ export function MarkdownRenderer({
             <blockquote {...props} className="border-l-4 border-indigo-500 pl-4 italic my-4 text-black" />
           ),
           a: ({ node, ...props }) => {
+            // Handle citation links
+            if (props.href?.startsWith('#source-')) {
+              const refNumber = props.href.replace('#source-', '');
+              const sourceResult = searchResults[parseInt(refNumber) - 1];
+              const sourceUrl = sourceResult?.url || "#";
+              
               return (
-                  <a
-                    {...props}
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="citation-link"
+                  onClick={(e) => {
+                    if (!sourceUrl || sourceUrl === "#") {
+                      e.preventDefault(); // Prevent navigation if no URL
+                    }
+                  }}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setActiveCitationId(`citation-${refNumber}`);
+                    setActiveReference(refNumber);
+                    setTooltipPosition({
+                      top: rect.bottom + window.scrollY + 10,
+                      left: rect.left + window.scrollX + (rect.width / 2)
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    setTimeout(() => {
+                      const tooltipEl = document.querySelector('.citation-tooltip[data-hovered="true"]');
+                      if (!tooltipEl) {
+                        setActiveCitationId(null);
+                        setActiveReference(null);
+                        setTooltipPosition(null);
+                      }
+                    }, 100);
+                  }}
+                >
+                  {props.children}
+                </a>
+              );
+            }
+            
+            // External source links in the Sources section
+            if (props.href && !props.href.startsWith('#')) {
+              return (
+                <a
+                  {...props}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="source-link"
+                />
+              );
+            }
+            
+            // Default link handling
+            return (
+              <a
+                {...props}
                 className="font-medium text-indigo-600 hover:text-indigo-800 underline"
               />
             );
@@ -211,9 +321,14 @@ export function MarkdownRenderer({
             );
           }
         }}
+        remarkPlugins={[]}
+        rehypePlugins={[]}
       >
-        {processedContent || ''}
+        {contentWithoutSources}
       </ReactMarkdown>
+      
+      {/* Add sources section only if there are citations */}
+      {hasCitations() && renderSourcesSection()}
       
       {/* Render tooltip via portal */}
       {isMounted && activeCitationId && renderTooltip()}
@@ -267,6 +382,42 @@ export function MarkdownRenderer({
         
         .prose {
           overflow: visible;
+        }
+        
+        /* Sources section styling */
+        .sources-container {
+          border-top: 1px solid #e5e7eb;
+        }
+        
+        .source-item {
+          padding: 4px 0;
+        }
+        
+        /* Improved citation link style */
+        .citation-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: #4f46e5;
+          font-size: 0.75rem;
+          font-weight: 500;
+          text-decoration: none !important;
+          cursor: pointer;
+          position: relative;
+          z-index: 10;
+          background-color: #eef2ff;
+          border-radius: 9999px;
+          padding: 0 4px;
+          min-width: 16px;
+          height: 16px;
+          margin: 0 1px;
+          vertical-align: text-top;
+          line-height: 1;
+        }
+        
+        .citation-link:hover {
+          background-color: #e0e7ff;
+          text-decoration: none !important;
         }
       `}</style>
     </div>

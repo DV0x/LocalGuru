@@ -39,7 +39,7 @@ export function ResultsContainer({
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold mb-6">Local Recommendations</h2>
       <div className="grid gap-6">
         {results.map((recommendation) => (

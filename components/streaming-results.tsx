@@ -113,7 +113,7 @@ export function StreamingResults({
   };
   
   return (
-    <div className="w-full mt-8 max-w-3xl mx-auto mb-8">
+    <div className="w-full mt-8 max-w-4xl mx-auto mb-8">
       <div className="neo-card p-6">
         {content && status !== 'stopped' ? (
           <>
