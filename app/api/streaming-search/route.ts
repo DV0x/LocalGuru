@@ -163,6 +163,10 @@ export async function POST(req: Request) {
           throw new Error('Anthropic API key not configured');
         }
         
+        // Verify we're using the correct model and API version
+        console.log(`Using Anthropic model: claude-3-5-haiku-20241022`);
+        console.log(`Using API version: 2023-06-01`);
+        
         const requestBody = {
           model: 'claude-3-5-haiku-20241022',
           system: systemPrompt,
@@ -173,6 +177,15 @@ export async function POST(req: Request) {
           temperature: 0.2,
           stream: true
         };
+        
+        // Log request body shape (not the full content for security)
+        console.log('Anthropic request:', {
+          model: requestBody.model,
+          messageCount: requestBody.messages.length,
+          systemPromptLength: systemPrompt.length,
+          userContentLength: formattedSearchContent.length,
+          stream: requestBody.stream
+        });
         
         // Send first keepalive and start regular interval
         await writeChunk(': keepalive ping before streaming\n');
@@ -194,23 +207,37 @@ export async function POST(req: Request) {
         
         while (retryCount <= maxRetries) {
           try {
+            console.log('Making Anthropic API request, attempt:', retryCount + 1);
+            
+            // Ensure proper streaming parameters for Anthropic API
             response = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01'
+                'anthropic-version': '2023-06-01',
+                'Accept': 'text/event-stream',
               },
               body: JSON.stringify(requestBody),
-              // Crucial for streaming to work in edge runtime
               cache: 'no-store'
             });
             
-            if (response && response.ok) break;
+            console.log('Anthropic API response status:', response.status);
+            console.log('Response headers:', Object.fromEntries([...response.headers.entries()]));
+            
+            if (response.ok) {
+              console.log('Successfully connected to Anthropic API');
+              break;
+            }
+            
+            // Log error details for debugging
+            const errorText = await response.text().catch(() => 'Could not read error response');
+            console.error('Anthropic API error:', response.status, errorText);
+            
             retryCount++;
             
             if (retryCount <= maxRetries) {
-              console.log(`Anthropic API error (${response?.status}), retry ${retryCount}/${maxRetries}`);
+              console.log(`Retrying Anthropic API call ${retryCount}/${maxRetries}...`);
               await new Promise(r => setTimeout(r, 1000));
             }
           } catch (e) {
@@ -236,6 +263,9 @@ export async function POST(req: Request) {
         let buffer = '';
         let completedStreamingContent = '';
         
+        // Add explicit debugging for stream processing
+        console.log('Starting to process Anthropic stream...');
+        
         // Manual stream chunking
         while (true) {
           const { done, value } = await reader.read();
@@ -247,6 +277,7 @@ export async function POST(req: Request) {
           
           // Decode this chunk
           const chunk = decoder.decode(value, { stream: true });
+          console.log(`Received chunk of ${chunk.length} bytes`);
           buffer += chunk;
           
           // Process complete lines
@@ -257,6 +288,7 @@ export async function POST(req: Request) {
             
             if (line.startsWith('data: ')) {
               const dataContent = line.substring(6);
+              console.log(`Processing data content: ${dataContent.substring(0, 50)}...`);
               
               // Handle completion
               if (dataContent === '[DONE]') {
@@ -266,6 +298,7 @@ export async function POST(req: Request) {
               
               try {
                 const parsedData = JSON.parse(dataContent);
+                console.log(`Data type: ${parsedData.type}`);
                 
                 // Extract the actual content delta
                 if (parsedData.type === 'content_block_delta' && 
@@ -274,18 +307,31 @@ export async function POST(req: Request) {
                   
                   const newContent = parsedData.delta.text;
                   completedStreamingContent += newContent;
+                  console.log(`Adding content (now ${completedStreamingContent.length} chars): ${newContent.substring(0, 20)}...`);
                   
-                  // Send just the delta text as a content update
-                  await writeChunk(JSON.stringify({
+                  // Send content update with forced JSON format
+                  const contentUpdate = JSON.stringify({
                     type: 'content',
                     content: completedStreamingContent
-                  }));
+                  });
+                  
+                  await writeChunk(contentUpdate);
                   
                   // Send a keepalive after content
                   await writeChunk(': keepalive during streaming\n');
+                } else if (parsedData.type === 'message_start') {
+                  console.log('Message started');
+                } else if (parsedData.type === 'message_delta') {
+                  console.log('Message delta received');
+                } else if (parsedData.type === 'content_block_start') {
+                  console.log('Content block started');
+                } else if (parsedData.type === 'message_stop') {
+                  console.log('Message stopped');
+                } else {
+                  console.log(`Unknown event type: ${parsedData.type}`);
                 }
               } catch (parseError) {
-                console.error('Error parsing stream data:', parseError);
+                console.error('Error parsing stream data:', parseError, 'Line:', line);
               }
             }
           }
