@@ -2,7 +2,6 @@
 
 import { FC, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { createPortal } from 'react-dom';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
@@ -35,11 +34,8 @@ export function MarkdownRenderer({
   content, 
   searchResults 
 }: MarkdownRendererProps) {
-  const [activeReference, setActiveReference] = useState<string | null>(null);
-  const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{top: number, left: number} | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   
   // Create a mapping of unique sources
   const sourceMap = new Map<string, number>();
@@ -81,72 +77,6 @@ export function MarkdownRenderer({
   // Function to check if the content has citations
   const hasCitations = () => {
     return (/\[\d+\]/).test(contentWithoutSources);
-  };
-  
-  // Counter for generating unique IDs
-  let citationCounter = 0;
-  
-  // Create tooltip portal element
-  const renderTooltip = () => {
-    if (!isMounted || !tooltipPosition || !activeReference) return null;
-    
-    const refNumber = activeReference;
-    const sourceData = searchResults[parseInt(refNumber) - 1];
-    
-    if (!sourceData) return null;
-    
-    return createPortal(
-      <div 
-        className="citation-tooltip fixed z-[1000] animate-fadeIn" 
-        style={{
-          maxWidth: '320px',
-          width: 'min(320px, calc(100vw - 40px))',
-          top: `${tooltipPosition.top}px`,
-          left: `${tooltipPosition.left}px`,
-          transform: 'translateX(-50%)'
-        }}
-        onMouseEnter={(e) => {
-          // Keep tooltip visible when hovering it
-          e.currentTarget.setAttribute('data-hovered', 'true');
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.removeAttribute('data-hovered');
-          setTimeout(() => {
-            const tooltipEl = document.querySelector('.citation-tooltip[data-hovered="true"]');
-            if (!tooltipEl) {
-              setActiveCitationId(null);
-              setActiveReference(null);
-              setTooltipPosition(null);
-            }
-          }, 100);
-        }}
-      >
-        <div className="relative">
-          <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-zinc-800 rotate-45 border border-zinc-700"></div>
-          <div className="relative p-3 bg-zinc-800 text-white rounded-md shadow-md border border-zinc-700">
-            <div className="font-medium text-white text-sm mb-2">
-              {sourceData.title}
-            </div>
-            {sourceData.subreddit && (
-              <div className="text-zinc-400 text-xs mb-2">
-                {sourceData.subreddit}
-              </div>
-            )}
-            <div className="text-zinc-300 text-xs mb-2">
-              {sourceData.snippet}
-            </div>
-            <div className="flex items-center mt-3 pt-2 border-t border-zinc-700">
-              {sourceData.url ? (
-                <span className="text-zinc-400 text-xs italic">Click citation to open source</span>
-              ) : (
-                <span className="text-zinc-400 text-xs italic">Source has no URL</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>,
-      document.body
-    );
   };
   
   // Only keep the isMounted effect
@@ -260,25 +190,6 @@ export function MarkdownRenderer({
                       // Let the default behavior happen (navigation to URL)
                     }
                   }}
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setActiveCitationId(`citation-${refNumber}`);
-                    setActiveReference(refNumber);
-                    setTooltipPosition({
-                      top: rect.bottom + window.scrollY + 10,
-                      left: rect.left + window.scrollX + (rect.width / 2)
-                    });
-                  }}
-                  onMouseLeave={() => {
-                    setTimeout(() => {
-                      const tooltipEl = document.querySelector('.citation-tooltip[data-hovered="true"]');
-                      if (!tooltipEl) {
-                        setActiveCitationId(null);
-                        setActiveReference(null);
-                        setTooltipPosition(null);
-                      }
-                    }, 100);
-                  }}
                 >
                   {props.children}
                 </a>
@@ -335,9 +246,6 @@ export function MarkdownRenderer({
       {/* Add sources section only if there are citations */}
       {hasCitations() && renderSourcesSection()}
       
-      {/* Render tooltip via portal */}
-      {isMounted && activeCitationId && renderTooltip()}
-      
       <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-5px); }
@@ -367,18 +275,6 @@ export function MarkdownRenderer({
           position: relative;
           display: inline-block;
           z-index: 50;
-        }
-        
-        .citation-tooltip {
-          display: block;
-          pointer-events: auto !important;
-          overflow: visible;
-          cursor: default;
-        }
-        
-        .citation-tooltip a {
-          cursor: pointer;
-          pointer-events: auto !important;
         }
         
         .markdown-renderer {
