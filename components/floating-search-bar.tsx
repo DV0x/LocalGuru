@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { FloatingSearchBarProps } from "@/app/lib/types/search-components";
+import styles from "./search-styles.module.css";
+import { LocationSelector } from "./location-selector";
 
 export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop, onLocationChange, initialLocation }: FloatingSearchBarProps) {
   const [query, setQuery] = useState("");
@@ -132,13 +134,13 @@ export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop
       <form 
         ref={formRef}
         onSubmit={handleSubmit} 
-        className="floating-search-container neo-card shadow-xl w-full cursor-text"
+        className={`${styles.floatingSearchContainer} shadow-xl w-full cursor-text`}
       >
         <div className="relative">
           <input
             ref={inputRef}
             type="text"
-            className="search-input pr-16 text-base cursor-text"
+            className={`${styles.searchInput} !min-h-12 pr-16 text-base cursor-text`}
             placeholder={currentPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -166,6 +168,17 @@ export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop
               </button>
             )}
           </div>
+          
+          {/* Location Selector Pill */}
+          {onLocationChange && (
+            <div className="absolute left-3 bottom-3 z-20">
+              <LocationSelector 
+                onLocationChange={onLocationChange} 
+                initialLocation={initialLocation}
+                variant="ultra-compact"
+              />
+            </div>
+          )}
         </div>
       </form>
       
@@ -200,12 +213,6 @@ export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop
           animation: fadeOut 250ms ease-in forwards;
         }
         
-        .floating-search-container.neo-card {
-          border: 2px solid #000;
-          background: #fff;
-          box-shadow: 6px 6px 0 0 rgba(0, 0, 0, 0.2);
-        }
-        
         .will-change-transform {
           will-change: transform;
         }
@@ -215,7 +222,7 @@ export function FloatingSearchBar({ onSearch, visible, isLoading = false, onStop
         }
         
         /* Ensure cursor is text type on the search bar */
-        .floating-search-container.neo-card,
+        .floating-search-container,
         .floating-search-container .search-input {
           cursor: text !important;
         }

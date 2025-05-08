@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, type FormEvent } from "react";
 import { ArrowUp, Square, ArrowUpCircle } from "lucide-react";
 import { LocationSelector } from "./location-selector";
 import { SearchBarProps } from "@/app/lib/types/search-components";
+import styles from "./search-styles.module.css";
 
 // Add TypeScript declarations for the Web Speech API
 declare global {
@@ -149,11 +150,11 @@ export function SearchBar({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto">
+    <form onSubmit={handleSubmit} className={styles.searchContainer}>
       <div className="relative">
         <textarea 
           ref={textareaRef}
-          className="search-input text-base w-full resize-none bg-white"
+          className={styles.searchInput}
           value={query}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
@@ -179,16 +180,27 @@ export function SearchBar({
           {isLoading ? (
             <button 
               type="button" 
-              className={`search-button bg-red-500 ${isStopping ? 'scale-95' : 'scale-100'}`}
+              className={`bg-red-500 ${isStopping ? 'scale-95' : 'scale-100'}`}
               onClick={handleStopSearch}
               aria-label="Stop search"
+              style={{
+                height: '36px',
+                width: '36px',
+                border: '2px solid black',
+                borderRadius: '6px',
+                boxShadow: '3px 3px 0 0 #000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s ease-in-out'
+              }}
             >
               <Square size={14} className="text-black" />
             </button>
           ) : (
             <button 
               type="submit" 
-              className="search-button" 
+              className={styles.searchButton}
               disabled={!query.trim()}
             >
               <ArrowUp size={16} />
