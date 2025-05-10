@@ -1,5 +1,10 @@
 import { supabaseAdmin } from '@/app/lib/supabase/client-server';
 import { formatDistance } from 'date-fns';
+import RefreshButton from '@/app/search-analytics/refresh-button';
+import ResizableTable from '@/app/search-analytics/resizable-table';
+
+// This ensures the data is always fresh, not cached
+export const revalidate = 0;
 
 // Define types for our analytics data
 interface DailyStats {
@@ -23,27 +28,39 @@ interface SearchLog {
 
 async function getSearchAnalytics() {
   // Get daily stats for the past 7 days
-  const { data: dailyStats } = await supabaseAdmin.rpc(
+  const { data: dailyStats, error: statsError } = await supabaseAdmin.rpc(
     'get_search_statistics_by_day',
     { 
       days_to_include: 7 
     }
   );
 
+  if (statsError) {
+    console.error('Error fetching daily statistics:', statsError);
+  }
+
   // Get most recent 50 searches
-  const { data: recentSearches } = await supabaseAdmin
+  const { data: recentSearches, error: searchesError } = await supabaseAdmin
     .from('search_performance_logs')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(50);
 
+  if (searchesError) {
+    console.error('Error fetching recent searches:', searchesError);
+  }
+
   // Get error stats
-  const { data: errorStats } = await supabaseAdmin
+  const { data: errorStats, error: errorStatsError } = await supabaseAdmin
     .from('search_performance_logs')
     .select('*')
     .not('error_message', 'is', null)
     .order('created_at', { ascending: false })
     .limit(20);
+
+  if (errorStatsError) {
+    console.error('Error fetching error stats:', errorStatsError);
+  }
 
   return {
     dailyStats: (dailyStats || []) as DailyStats[],
@@ -55,9 +72,60 @@ async function getSearchAnalytics() {
 export default async function SearchAnalyticsPage() {
   const { dailyStats, recentSearches, errorStats } = await getSearchAnalytics();
 
+  // Define column headers for recent searches
+  const searchColumns = [
+    { id: 'query', label: 'Query', minWidth: 150 },
+    { id: 'intent', label: 'Intent', minWidth: 120 },
+    { id: 'duration', label: 'Duration', minWidth: 100 },
+    { id: 'results', label: 'Results', minWidth: 80 },
+    { id: 'time', label: 'Time', minWidth: 120 }
+  ];
+
+  // Define column headers for errors
+  const errorColumns = [
+    { id: 'query', label: 'Query', minWidth: 150 },
+    { id: 'error', label: 'Error', minWidth: 250 },
+    { id: 'time', label: 'Time', minWidth: 120 }
+  ];
+
+  // Prepare search data
+  const searchData = recentSearches.map(search => ({
+    id: search.id,
+    cells: [
+      { id: 'query', content: search.query },
+      { id: 'intent', content: search.intent },
+      { 
+        id: 'duration', 
+        content: `${search.duration_ms}ms${search.timed_out ? ' ⚠️' : ''}`,
+        className: search.timed_out ? 'has-warning' : ''
+      },
+      { id: 'results', content: String(search.result_count) },
+      { 
+        id: 'time', 
+        content: formatDistance(new Date(search.created_at), new Date(), { addSuffix: true }) 
+      }
+    ]
+  }));
+
+  // Prepare error data
+  const errorData = errorStats.map(error => ({
+    id: error.id,
+    cells: [
+      { id: 'query', content: error.query },
+      { id: 'error', content: error.error_message || '', className: 'text-red-600' },
+      { 
+        id: 'time', 
+        content: formatDistance(new Date(error.created_at), new Date(), { addSuffix: true }) 
+      }
+    ]
+  }));
+
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6">Search Analytics Dashboard</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Search Analytics Dashboard</h1>
+        <RefreshButton />
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-white p-4 rounded shadow">
@@ -86,78 +154,20 @@ export default async function SearchAnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-4 rounded shadow">
           <h2 className="text-lg font-semibold mb-4">Recent Searches</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-4 py-2 text-left">Query</th>
-                  <th className="px-4 py-2 text-left">Intent</th>
-                  <th className="px-4 py-2 text-left">Duration</th>
-                  <th className="px-4 py-2 text-left">Results</th>
-                  <th className="px-4 py-2 text-left">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentSearches.map((search) => (
-                  <tr key={search.id} className="border-t">
-                    <td className="px-4 py-2 max-w-[200px] truncate">{search.query}</td>
-                    <td className="px-4 py-2">{search.intent}</td>
-                    <td className="px-4 py-2">
-                      {search.duration_ms}ms
-                      {search.timed_out && <span className="ml-1 text-orange-500">⚠️</span>}
-                    </td>
-                    <td className="px-4 py-2">{search.result_count}</td>
-                    <td className="px-4 py-2 text-gray-500">
-                      {formatDistance(
-                        new Date(search.created_at),
-                        new Date(),
-                        { addSuffix: true }
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResizableTable 
+            columns={searchColumns} 
+            data={searchData} 
+            emptyMessage="No recent searches found" 
+          />
         </div>
         
         <div className="bg-white p-4 rounded shadow">
           <h2 className="text-lg font-semibold mb-4">Recent Errors</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-4 py-2 text-left">Query</th>
-                  <th className="px-4 py-2 text-left">Error</th>
-                  <th className="px-4 py-2 text-left">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {errorStats.map((error) => (
-                  <tr key={error.id} className="border-t">
-                    <td className="px-4 py-2 max-w-[200px] truncate">{error.query}</td>
-                    <td className="px-4 py-2 max-w-[300px] truncate text-red-600">
-                      {error.error_message}
-                    </td>
-                    <td className="px-4 py-2 text-gray-500">
-                      {formatDistance(
-                        new Date(error.created_at),
-                        new Date(),
-                        { addSuffix: true }
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {errorStats.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-2 text-center text-gray-500">
-                      No errors found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ResizableTable 
+            columns={errorColumns} 
+            data={errorData} 
+            emptyMessage="No errors found" 
+          />
         </div>
       </div>
     </div>

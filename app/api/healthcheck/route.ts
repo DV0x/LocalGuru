@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 export const runtime = 'edge';
 
 /**
- * Simple health check endpoint that returns a 200 OK
- * Used for handling redirected requests
+ * System-wide health check endpoint
+ * Provides comprehensive health metrics for the entire application
  */
 export async function GET() {
   try {
@@ -43,6 +43,8 @@ export async function GET() {
     
     return NextResponse.json({
       status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
       database: {
         connected: !dbError && dbCheck !== null,
         error: dbError ? dbError.message : null
@@ -57,8 +59,10 @@ export async function GET() {
         } : null,
         last_hour: {
           total_searches: recentCount || 0
-        },
-        errors_24h: {
+        }
+      },
+      error_stats: {
+        last_24h: {
           error_count: errorCount || 0
         }
       },
@@ -66,7 +70,13 @@ export async function GET() {
         health_check_ms: duration
       },
       version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development',
+      services: {
+        error_logging: {
+          status: 'ok',
+          url: '/api/error-log'
+        }
+      }
     });
   } catch (error) {
     console.error('Health check error:', error);
@@ -82,13 +92,13 @@ export async function GET() {
 }
 
 /**
- * Also handle POST requests to this endpoint
+ * Also handle POST requests to this endpoint for compatibility
  */
 export async function POST() {
   return new Response(JSON.stringify({
     success: true,
-    results: [],
-    message: 'Request handled successfully'
+    service: 'healthcheck',
+    message: 'System is operational'
   }), {
     status: 200,
     headers: {

@@ -4,6 +4,8 @@ import { formatSearchResultsForLLM, formatResultForClient } from '@/app/lib/sear
 import { StreamingStatus } from '@/app/lib/search/streaming-types';
 import { streamingSearchSchema, type StreamingSearchRequest } from '@/app/lib/validators/schemas';
 import { validateRequestBody } from '@/app/lib/validators/validate-request';
+import { logSearchError } from '@/app/lib/utils/error-logger';
+import { supabaseAdmin } from '@/app/lib/supabase/client-server';
 
 /**
  * Configure this route to use Edge Runtime for optimal performance
@@ -34,12 +36,32 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   
+  // Track query for error logging
+  let queryText = 'unknown';
+  const startTime = Date.now();
+  let searchResultCount = 0;
+  let searchIntent = 'general';
+  
   try {
     // Parse and validate the request body
     const body = await req.json().catch(() => ({}));
     const validation = await validateRequestBody(body, streamingSearchSchema);
     
     if (!validation.success) {
+      console.log('Validation error, logging to error system...');
+      await logSearchPerformance({
+        query: body?.query || 'validation_error',
+        intent: 'error',
+        vectorWeight: 0.7,
+        textWeight: 0.3,
+        efSearch: 300,
+        durationMs: Date.now() - startTime,
+        resultCount: 0,
+        timedOut: false,
+        errorMessage: validation.error || 'Invalid request body',
+        source: 'streaming-search-validation'
+      });
+      
       return new Response(
         JSON.stringify({ error: validation.error }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -57,6 +79,31 @@ export async function POST(req: Request) {
       textWeight,
       efSearch
     } = validation.data;
+    
+    // Store query for logging
+    queryText = query;
+    
+    // Artificial error for testing - will trigger when search query contains "FORCE_ERROR"
+    if (query.includes('FORCE_ERROR')) {
+      console.log('Detected test query with FORCE_ERROR - triggering artificial error for testing');
+      await logSearchPerformance({
+        query,
+        intent: 'test',
+        vectorWeight: vectorWeight || 0.7,
+        textWeight: textWeight || 0.3,
+        efSearch: efSearch || 300,
+        durationMs: Date.now() - startTime,
+        resultCount: 0,
+        timedOut: false,
+        errorMessage: 'Forced test error from search query containing FORCE_ERROR',
+        source: 'streaming-search-test'
+      });
+      
+      return new Response(
+        JSON.stringify({ error: 'Forced test error (FORCE_ERROR found in query)' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Log the request parameters
     console.log('Search request:', { 
@@ -82,7 +129,7 @@ export async function POST(req: Request) {
     
     // Start the main processing in a non-blocking way
     (async () => {
-      const startTime = Date.now();
+      const localStartTime = Date.now();
       let keepaliveInterval: NodeJS.Timeout | null = null;
       
       try {
@@ -113,7 +160,11 @@ export async function POST(req: Request) {
           similarityThreshold: 0.6
         });
         
-        const searchTime = Date.now() - startTime;
+        // Capture search metadata for logging
+        searchResultCount = searchResponse.results.length;
+        searchIntent = searchResponse.analysis?.intent || 'general';
+        
+        const searchTime = Date.now() - localStartTime;
         console.log(`Search completed in ${searchTime}ms, found ${searchResponse.results.length} results`);
         
         // Search complete status
@@ -138,15 +189,8 @@ export async function POST(req: Request) {
           query
         );
         
-        // Starting generation
-        await writeChunk(JSON.stringify({
-          type: 'status',
-          status: 'generating',
-          message: 'Synthesizing insights from results...',
-          timestamp: Date.now()
-        }));
-        
-        // Send early metadata with search results
+        // Send metadata with search results BEFORE changing status to generating
+        // This ensures the UI has the results when it reacts to the 'generating' status
         const clientResults = searchResponse.results.map(formatResultForClient);
         await writeChunk('METADATA:' + JSON.stringify({
           searchResults: clientResults,
@@ -155,6 +199,14 @@ export async function POST(req: Request) {
           searchTime,
           totalResults: searchResponse.results.length,
           defaultLocation
+        }));
+        
+        // AFTER sending metadata, change status to generating
+        await writeChunk(JSON.stringify({
+          type: 'status',
+          status: 'generating',
+          message: 'Synthesizing insights from results...',
+          timestamp: Date.now()
         }));
         
         // Set up Anthropic API call
@@ -422,7 +474,7 @@ export async function POST(req: Request) {
         }));
         
         // Final metadata
-        const totalTime = Date.now() - startTime;
+        const totalTime = Date.now() - localStartTime;
         await writeChunk('METADATA:' + JSON.stringify({
           searchResults: clientResults,
           query,
@@ -435,8 +487,39 @@ export async function POST(req: Request) {
           model: 'claude-3-5-haiku-20241022'
         }));
         
+        // Log successful search
+        await logSearchPerformance({
+          query: queryText,
+          intent: searchIntent,
+          vectorWeight: vectorWeight || 0.7,
+          textWeight: textWeight || 0.3,
+          efSearch: efSearch || 300,
+          durationMs: totalTime,
+          resultCount: searchResultCount,
+          timedOut: false,
+          source: 'streaming-search'
+        }).catch(e => console.error('Failed to log successful search:', e));
+        
       } catch (error) {
         console.error('Processing error:', error);
+        
+        // Log the error to our database - ensure this is working
+        console.log('Logging search processing error to error system...');
+        await logSearchPerformance({
+          query: queryText,
+          intent: searchIntent,
+          vectorWeight: vectorWeight || 0.7,
+          textWeight: textWeight || 0.3,
+          efSearch: efSearch || 300,
+          durationMs: Date.now() - localStartTime,
+          resultCount: searchResultCount,
+          timedOut: false,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          source: 'streaming-search-error'
+        }).catch(e => {
+          // Make sure to handle errors in the error logger itself
+          console.error('Failed to log search error:', e);
+        });
         
         try {
           // Send error status
@@ -463,6 +546,21 @@ export async function POST(req: Request) {
       }
     })().catch(error => {
       console.error('Unhandled error in stream processing:', error);
+      
+      // Ensure proper error logging for unhandled errors
+      console.log('Logging unhandled error to error system...');
+      logSearchPerformance({
+        query: queryText,
+        intent: 'error',
+        vectorWeight: vectorWeight || 0.7,
+        textWeight: textWeight || 0.3,
+        efSearch: efSearch || 300,
+        durationMs: Date.now() - startTime,
+        resultCount: 0,
+        timedOut: false,
+        errorMessage: `Unhandled error: ${error instanceof Error ? error.message : String(error)}`,
+        source: 'streaming-search-unhandled'
+      }).catch(e => console.error('Failed to log unhandled error:', e));
     });
     
     // Return the stream immediately
@@ -470,6 +568,26 @@ export async function POST(req: Request) {
     
   } catch (error) {
     console.error('Request handler error:', error);
+    
+    // Make sure request handler errors are being logged
+    console.log('Logging request handler error to error system...');
+    try {
+      await logSearchPerformance({
+        query: queryText,
+        intent: 'error',
+        vectorWeight: 0.7,
+        textWeight: 0.3,
+        efSearch: 300,
+        durationMs: Date.now() - startTime,
+        resultCount: 0,
+        timedOut: false,
+        errorMessage: `Request handler error: ${error instanceof Error ? error.message : String(error)}`,
+        source: 'streaming-search-request-handler'
+      });
+    } catch (loggingError) {
+      console.error('Failed to log request handler error:', loggingError);
+    }
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }

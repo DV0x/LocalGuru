@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StreamingStatus, StreamingUpdate } from '@/app/lib/search/streaming-types';
+import { logClientError } from '@/app/lib/utils/error-logger';
 
 // Define interface for search options
 interface SearchOptions {
@@ -82,6 +83,7 @@ export function useStreamingSearch(initialQuery = '') {
       const searchOptions = { ...defaultOptions, ...options };
       
       // Start fetch request with abort signal
+      console.log('Starting search request for query:', searchQuery);
       const response = await fetch('/api/streaming-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,7 +95,19 @@ export function useStreamingSearch(initialQuery = '') {
       });
       
       if (!response.ok || !response.body) {
-        throw new Error(response.statusText || 'Failed to stream response');
+        const statusText = response.statusText || 'Failed to stream response';
+        const status = response.status;
+        
+        console.error(`Search request failed: ${status} ${statusText}`);
+        
+        // Log API errors
+        await logClientError({
+          query: searchQuery,
+          errorMessage: `API Error: ${status} ${statusText}`,
+          source: 'client-streaming-search-api'
+        }).catch(e => console.error('Failed to log API error:', e));
+        
+        throw new Error(statusText);
       }
       
       // Set up stream reader
@@ -166,7 +180,17 @@ export function useStreamingSearch(initialQuery = '') {
       if (searchIdRef.current === currentSearchId && 
           err instanceof Error && 
           err.name !== 'AbortError') {
-        setError(err.message || 'An unexpected error occurred');
+        
+        const errorMessage = err.message || 'An unexpected error occurred';
+        console.error('Search error:', errorMessage);
+        setError(errorMessage);
+        
+        // Log client-side error with more details
+        logClientError({
+          query: searchQuery,
+          errorMessage: `Client error: ${errorMessage}`,
+          source: 'client-streaming-search'
+        }).catch(e => console.error('Failed to log client error:', e));
       }
     } finally {
       // Only update loading state if this search is still current

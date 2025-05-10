@@ -53,21 +53,31 @@ export function MarkdownRenderer({
   
   // Process markdown to make citations interactive
   const processedContent = content?.replace(
-    /\[(\d+)\]/g, 
-    (match, refNumber) => {
-      const originalResult = searchResults[parseInt(refNumber) - 1];
-      if (!originalResult) return match;
+    /\[(\d+(?:,\s*\d+)*)\]/g, 
+    (match, refNumbers) => {
+      // Handle both single numbers and comma-separated numbers in brackets
+      const numbers = refNumbers.split(',').map((n: string) => n.trim());
       
-      // Find the unique ID for this source
-      const sourceId = originalResult.url || originalResult.id;
-      const uniqueIndex = sourceMap.get(sourceId);
+      // Process each number and create a formatted citation
+      const formattedCitations = numbers.map((numStr: string) => {
+        const num = parseInt(numStr);
+        const originalResult = searchResults[num - 1];
+        if (!originalResult) return numStr;
+        
+        // Find the unique ID for this source
+        const sourceId = originalResult.url || originalResult.id;
+        const uniqueIndex = sourceMap.get(sourceId);
+        
+        if (uniqueIndex !== undefined) {
+          // Return just the link without brackets
+          return `[${numStr}](#source-${numStr})`;
+        }
+        
+        return numStr;
+      });
       
-      if (uniqueIndex !== undefined) {
-        // Use standard markdown link format which ReactMarkdown will properly handle
-        return `[${refNumber}](#source-${refNumber})`;
-      }
-      
-      return match;
+      // For single citations or multiple citations, join with a space without brackets
+      return formattedCitations.join(' ');
     }
   );
   
@@ -76,7 +86,7 @@ export function MarkdownRenderer({
   
   // Function to check if the content has citations
   const hasCitations = () => {
-    return (/\[\d+\]/).test(contentWithoutSources);
+    return (/\[\d+(?:,\s*\d+)*\]/).test(content || '');  // Check original content for citations
   };
   
   // Only keep the isMounted effect
@@ -319,6 +329,11 @@ export function MarkdownRenderer({
         .citation-link:hover {
           background-color: #e0e7ff;
           text-decoration: none !important;
+        }
+        
+        /* Multi-citation styling (for space-separated numbers) */
+        .citation-link + .citation-link {
+          margin-left: 2px;
         }
       `}</style>
     </div>
