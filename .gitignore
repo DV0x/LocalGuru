@@ -56,3 +56,6 @@ next-env.d.ts
 
 # backups
 /backups/
+
+# Next.js build output
+packages/*/.next/

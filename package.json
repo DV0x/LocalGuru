@@ -8,6 +8,12 @@
     "build:web": "cd packages/web-app && next build",
     "start:web": "cd packages/web-app && next start",
     "lint:web": "cd packages/web-app && next lint",
+    
+    "dev:pwa": "cd packages/pwa-app && next dev -p 3001",
+    "build:pwa": "cd packages/pwa-app && next build",
+    "start:pwa": "cd packages/pwa-app && next start -p 3001",
+    "lint:pwa": "cd packages/pwa-app && next lint",
+    
     "deploy:functions": "cd packages/supabase-functions && supabase functions deploy",
     "serve:functions": "cd packages/supabase-functions && supabase functions serve --env-file .env.local"
   },
