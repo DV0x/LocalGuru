@@ -1,0 +1,34 @@
+{
+  "version": 3,
+  "middleware": {},
+  "functions": {
+    "/api/streaming-search/route": {
+      "files": [
+        "server/middleware-build-manifest.js",
+        "server/middleware-react-loadable-manifest.js",
+        "server/next-font-manifest.js",
+        "server/interception-route-rewrite-manifest.js",
+        "server/edge-runtime-webpack.js",
+        "server/app/api/streaming-search/route.js"
+      ],
+      "name": "app/api/streaming-search/route",
+      "page": "/api/streaming-search/route",
+      "matchers": [
+        {
+          "regexp": "^/api/streaming\\-search$",
+          "originalSource": "/api/streaming-search"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "development",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "jUC8Jc9pXxKxYHsjvGl35wMRx1toilxws8GzFQ014CA="
+      },
+      "regions": [
+        "auto"
+      ]
+    }
+  },
+  "sortedMiddleware": []
+}

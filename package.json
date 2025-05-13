@@ -1,14 +1,15 @@
 {
-  "name": "localguru",
+  "name": "localguru-monorepo",
   "version": "1.0.0",
   "description": "Localguru travel recommendation application",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e .env.local -- next dev",
-    "build": "dotenv -e .env.local -- next build",
-    "start": "dotenv -e .env.local -- next start",
-    "lint": "next lint",
-    "start-processors": "ts-node embedding-processor/scripts/start-processors.ts"
+    "dev:web": "cd packages/web-app && next dev",
+    "build:web": "cd packages/web-app && next build",
+    "start:web": "cd packages/web-app && next start",
+    "lint:web": "cd packages/web-app && next lint",
+    "deploy:functions": "cd packages/supabase-functions && supabase functions deploy",
+    "serve:functions": "cd packages/supabase-functions && supabase functions serve --env-file .env.local"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.10",
@@ -87,5 +88,6 @@
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.3.3"
-  }
+  },
+  "packageManager": "pnpm@8.12.0"
 }

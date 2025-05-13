@@ -1,0 +1,60 @@
+/* Search Component Styles */
+
+.searchContainer {
+  @apply w-full mx-auto;
+  max-width: 56rem; /* match max-w-4xl */
+}
+
+.searchInput {
+  @apply w-full bg-white border border-black text-base focus:outline-none rounded-md;
+  min-height: 75px;
+  max-height: 150px;
+  height: auto;
+  line-height: 1.5;
+  padding-top: 12px;
+  padding-right: 6rem;
+  padding-bottom: 40px; /* Space for the button */
+  padding-left: 0.75rem;
+  box-shadow: 3px 3px 0 0 rgba(0, 0, 0, 0.9);
+  
+  /* Essential wrapping properties */
+  white-space: pre-wrap !important; 
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+  
+  /* Disable horizontal scrolling */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  
+  max-width: 100%;
+  display: block;
+  vertical-align: top;
+  resize: none;
+}
+
+.searchButton {
+  @apply flex items-center justify-center relative;
+  height: 36px;
+  width: 36px;
+  background-color: rgb(255, 214, 0); /* --secondary from globals.css */
+  border: 2px solid black;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 0 #000;
+  transition: all 0.15s ease-in-out;
+}
+
+.searchButton:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #000;
+}
+
+.searchButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0px 0px 0 0 #000;
+}
+
+.floatingSearchContainer {
+  @apply border-2 border-black bg-white;
+  box-shadow: 6px 6px 0 0 rgba(0, 0, 0, 0.2);
+} 

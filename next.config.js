@@ -3,14 +3,14 @@ const path = require('path');
 const dotenv = require('dotenv');
 
 // Explicitly load environment variables for Next.js
-const envPath = path.resolve(process.cwd(), '.env.local');
+const envPath = path.resolve(process.cwd(), 'packages/web-app/.env.local');
 dotenv.config({ path: envPath });
 
 const nextConfig = {
   reactStrictMode: true,
   
   // Tell Next.js to transpile the app/lib directory
-  transpilePackages: ['app/lib'],
+  transpilePackages: ['packages/web-app/lib'],
   
   // Configure path resolution
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
@@ -19,16 +19,16 @@ const nextConfig = {
       ...config.resolve,
       alias: {
         ...config.resolve.alias,
-        '@/app': path.resolve(__dirname, 'app'),
-        '@/app/lib': path.resolve(__dirname, 'app/lib'),
-        '@/app/lib/utils': path.resolve(__dirname, 'app/lib/utils'),
-        '@/app/lib/search': path.resolve(__dirname, 'app/lib/search'),
-        '@/app/lib/supabase': path.resolve(__dirname, 'app/lib/supabase')
+        '@/app': path.resolve(__dirname, 'packages/web-app'),
+        '@/app/lib': path.resolve(__dirname, 'packages/web-app/lib'),
+        '@/app/lib/utils': path.resolve(__dirname, 'packages/web-app/lib/utils'),
+        '@/app/lib/search': path.resolve(__dirname, 'packages/web-app/lib/search'),
+        '@/app/lib/supabase': path.resolve(__dirname, 'packages/web-app/lib/supabase')
       },
       // Ensure proper module resolution
       modules: [
         path.resolve(__dirname),  // Add root directory
-        path.resolve(__dirname, 'app'), // Add app directory
+        path.resolve(__dirname, 'packages/web-app'), // Add app directory
         'node_modules'  // Keep node_modules in the resolution path
       ]
     };
@@ -37,10 +37,10 @@ const nextConfig = {
     config.module.rules.push({
       test: /\.(js|ts|tsx)$/,
       include: [
-        path.resolve(__dirname, 'app/lib'),
-        path.resolve(__dirname, 'app/lib/utils'),
-        path.resolve(__dirname, 'app/lib/search'),
-        path.resolve(__dirname, 'app/lib/supabase')
+        path.resolve(__dirname, 'packages/web-app/lib'),
+        path.resolve(__dirname, 'packages/web-app/lib/utils'),
+        path.resolve(__dirname, 'packages/web-app/lib/search'),
+        path.resolve(__dirname, 'packages/web-app/lib/supabase')
       ],
       use: defaultLoaders.babel,
     });

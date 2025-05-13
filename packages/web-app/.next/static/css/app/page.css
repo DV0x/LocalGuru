@@ -1,0 +1,88 @@
+/*!***********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ../../node_modules/.pnpm/next@14.2.28_react-dom@18.3.1_react@18.3.1/node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[14].oneOf[7].use[2]!../../node_modules/.pnpm/next@14.2.28_react-dom@18.3.1_react@18.3.1/node_modules/next/dist/build/webpack/loaders/postcss-loader/src/index.js??ruleSet[1].rules[14].oneOf[7].use[3]!./app/components/search-styles.module.css ***!
+  \***********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************/
+/* Search Component Styles */
+
+.search-styles_searchContainer__ODKBY {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  max-width: 56rem; /* match max-w-4xl */
+}
+
+.search-styles_searchInput__R60JB {
+  width: 100%;
+  border-radius: calc(var(--radius) - 2px);
+  border-width: 1px;
+  --tw-border-opacity: 1;
+  border-color: rgb(0 0 0 / var(--tw-border-opacity, 1));
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.search-styles_searchInput__R60JB:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.search-styles_searchInput__R60JB {
+  min-height: 75px;
+  max-height: 150px;
+  height: auto;
+  line-height: 1.5;
+  padding-top: 12px;
+  padding-right: 6rem;
+  padding-bottom: 40px; /* Space for the button */
+  padding-left: 0.75rem;
+  box-shadow: 3px 3px 0 0 rgba(0, 0, 0, 0.9);
+  
+  /* Essential wrapping properties */
+  white-space: pre-wrap !important; 
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+  
+  /* Disable horizontal scrolling */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  
+  max-width: 100%;
+  display: block;
+  vertical-align: top;
+  resize: none;
+}
+
+.search-styles_searchButton__4rmMl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  width: 36px;
+  background-color: rgb(255, 214, 0); /* --secondary from globals.css */
+  border: 2px solid black;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 0 #000;
+  transition: all 0.15s ease-in-out;
+}
+
+.search-styles_searchButton__4rmMl:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #000;
+}
+
+.search-styles_searchButton__4rmMl:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0px 0px 0 0 #000;
+}
+
+.search-styles_floatingSearchContainer__CZxn8 {
+  border-width: 2px;
+  --tw-border-opacity: 1;
+  border-color: rgb(0 0 0 / var(--tw-border-opacity, 1));
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+  box-shadow: 6px 6px 0 0 rgba(0, 0, 0, 0.2);
+} 
