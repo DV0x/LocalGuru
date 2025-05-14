@@ -51,6 +51,15 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Futuristic colors
+        "future-dark": "#050714",
+        "future-dark-800": "#0a0e24",
+        "future-dark-700": "#111736",
+        "future-dark-600": "#1a2046",
+        "future-accent": "#4361EE",
+        "future-accent-light": "#4CC9F0",
+        "future-accent-dark": "#3A0CA3",
+        "future-highlight": "#F72585",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -66,10 +75,48 @@ const config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        pulse: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
+        "gradient-x": {
+          "0%, 100%": {
+            "background-position": "0% 50%",
+          },
+          "50%": {
+            "background-position": "100% 50%",
+          },
+        },
+        "background-pan": {
+          "0%": { backgroundPosition: "0% center" },
+          "100%": { backgroundPosition: "200% center" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        float: "float 6s ease-in-out infinite",
+        pulse: "pulse 3s ease-in-out infinite",
+        "gradient-x": "gradient-x 15s ease infinite",
+        "background-pan": "background-pan 3s linear infinite",
+      },
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+        "future-grid":
+          "linear-gradient(rgba(67, 97, 238, 0.15) 1px, transparent 1px), linear-gradient(to right, rgba(67, 97, 238, 0.15) 1px, transparent 1px)",
+        "future-glow": "radial-gradient(circle at center, rgba(67, 97, 238, 0.2) 0%, transparent 70%)",
+        "future-card": "linear-gradient(to bottom right, rgba(67, 97, 238, 0.1), rgba(58, 12, 163, 0.1))",
+      },
+      backgroundSize: {
+        "future-grid": "50px 50px",
+      },
+      boxShadow: {
+        "future-glow": "0 0 20px rgba(67, 97, 238, 0.5)",
+        "future-card": "0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(67, 97, 238, 0.1)",
       },
     },
   },

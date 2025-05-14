@@ -71,7 +71,7 @@ function cleanupCache(): void {
   const now = Date.now();
   
   // Remove entries older than TTL
-  for (const [key, entry] of SEARCH_CACHE.entries()) {
+  for (const [key, entry] of Array.from(SEARCH_CACHE.entries())) {
     if (now - entry.timestamp > CACHE_TTL) {
       SEARCH_CACHE.delete(key);
     }
@@ -421,7 +421,7 @@ export async function performFullSearch(options: SearchOptions) {
       console.log('Search timeout occurred, attempting to return partial results');
       
       // Try to retrieve any cached results for similar queries
-      const similarQueries = SEARCH_CACHE.keys();
+      const similarQueries = Array.from(SEARCH_CACHE.keys());
       for (const key of similarQueries) {
         if (key.includes(query.toLowerCase().substring(0, 5))) {
           const cachedResult = SEARCH_CACHE.get(key);

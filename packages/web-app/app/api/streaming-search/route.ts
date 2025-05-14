@@ -6,6 +6,7 @@ import { streamingSearchSchema, type StreamingSearchRequest } from '@/app/lib/va
 import { validateRequestBody } from '@/app/lib/validators/validate-request';
 import { logSearchError } from '@/app/lib/utils/error-logger';
 import { supabaseAdmin } from '@/app/lib/supabase/client-server';
+import { isAllowedOrigin, getCorsHeaders } from '@/app/lib/utils/origin-validator';
 
 /**
  * Configure this route to use Edge Runtime for optimal performance
@@ -15,14 +16,19 @@ export const preferredRegion = 'auto';
 export const fetchCache = 'force-no-store'; // Add force-no-store to prevent caching
 
 // Helper to create a response with correct streaming headers
-function createStreamResponse(readable: ReadableStream) {
+function createStreamResponse(readable: ReadableStream, origin: string | null) {
   return new Response(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no', // Prevent Nginx buffering
-      'Transfer-Encoding': 'chunked' // Ensure chunked transfer encoding
+      'Transfer-Encoding': 'chunked', // Ensure chunked transfer encoding
+      // Add CORS headers
+      'Access-Control-Allow-Origin': origin || '*',
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key'
     },
   });
 }
@@ -32,6 +38,19 @@ function createStreamResponse(readable: ReadableStream) {
  * Handles streaming search with LLM processing for narrative responses
  */
 export async function POST(req: Request) {
+  const origin = req.headers.get('origin');
+  
+  // If origin is not allowed, return 403 Forbidden
+  if (!isAllowedOrigin(origin)) {
+    console.log(`Blocked request from disallowed origin: ${origin}`);
+    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+      status: 403,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+  
   // Create encoder/decoder once
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -43,12 +62,27 @@ export async function POST(req: Request) {
   let searchIntent = 'general';
   
   try {
-    // Parse and validate the request body
-    const body = await req.json().catch(() => ({}));
+    // Parse and validate the request body - add more flexible body parsing
+    const body = await req.json().catch(() => {
+      const url = new URL(req.url);
+      const query = url.searchParams.get('query');
+      if (query) {
+        // Handle GET-style parameters in POST
+        return { query };
+      }
+      return {};
+    });
+    
+    console.log('Received search request with body:', body);
+    
     const validation = await validateRequestBody(body, streamingSearchSchema);
     
     if (!validation.success) {
       console.log('Validation error, logging to error system...');
+      
+      // Get error message safely with type narrowing
+      const errorMessage = validation.success === false ? validation.error : 'Invalid request body';
+      
       await logSearchPerformance({
         query: body?.query || 'validation_error',
         intent: 'error',
@@ -58,13 +92,20 @@ export async function POST(req: Request) {
         durationMs: Date.now() - startTime,
         resultCount: 0,
         timedOut: false,
-        errorMessage: validation.error || 'Invalid request body',
+        errorMessage,
         source: 'streaming-search-validation'
       });
       
       return new Response(
-        JSON.stringify({ error: validation.error }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: errorMessage }),
+        { 
+          status: 400, 
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': origin || '*',
+            'Access-Control-Allow-Credentials': 'true'
+          } 
+        }
       );
     }
     
@@ -192,13 +233,16 @@ export async function POST(req: Request) {
         // Send metadata with search results BEFORE changing status to generating
         // This ensures the UI has the results when it reacts to the 'generating' status
         const clientResults = searchResponse.results.map(formatResultForClient);
-        await writeChunk('METADATA:' + JSON.stringify({
+        await writeChunk(JSON.stringify({
+          type: 'metadata',
           searchResults: clientResults,
           query,
           analysis: searchResponse.analysis,
           searchTime,
           totalResults: searchResponse.results.length,
-          defaultLocation
+          defaultLocation,
+          provider: 'anthropic',
+          model: 'claude-3-5-haiku-20241022'
         }));
         
         // AFTER sending metadata, change status to generating
@@ -275,7 +319,12 @@ export async function POST(req: Request) {
             });
             
             console.log('Anthropic API response status:', response.status);
-            console.log('Response headers:', Object.fromEntries([...response.headers.entries()]));
+            // Convert headers to object safely using a loop instead of iterator spread
+            const headerObj: Record<string, string> = {};
+            response.headers.forEach((value, key) => {
+              headerObj[key] = value;
+            });
+            console.log('Response headers:', headerObj);
             
             if (response.ok) {
               console.log('Successfully connected to Anthropic API');
@@ -475,7 +524,8 @@ export async function POST(req: Request) {
         
         // Final metadata
         const totalTime = Date.now() - localStartTime;
-        await writeChunk('METADATA:' + JSON.stringify({
+        await writeChunk(JSON.stringify({
+          type: 'metadata',
           searchResults: clientResults,
           query,
           analysis: searchResponse.analysis,
@@ -563,8 +613,8 @@ export async function POST(req: Request) {
       }).catch(e => console.error('Failed to log unhandled error:', e));
     });
     
-    // Return the stream immediately
-    return createStreamResponse(stream.readable);
+    // Return the stream immediately with CORS headers
+    return createStreamResponse(stream.readable, origin);
     
   } catch (error) {
     console.error('Request handler error:', error);
@@ -590,7 +640,14 @@ export async function POST(req: Request) {
     
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { 
+        status: 500, 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': origin || '*',
+          'Access-Control-Allow-Credentials': 'true'
+        } 
+      }
     );
   }
 }
@@ -598,15 +655,23 @@ export async function POST(req: Request) {
 /**
  * Handle OPTIONS requests for CORS preflight
  */
-export async function OPTIONS() {
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get('origin');
+  
+  // If origin is not allowed, return 403 Forbidden
+  if (!isAllowedOrigin(origin)) {
+    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+      status: 403,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+  
+  // Return appropriate CORS headers for allowed origins
   return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Max-Age': '86400',
-    },
+    status: 200,
+    headers: getCorsHeaders(origin)
   });
 }
 
@@ -615,6 +680,19 @@ export async function OPTIONS() {
  * This is for debugging purposes only
  */
 export async function GET(req: Request) {
+  const origin = req.headers.get('origin');
+  
+  // If origin is not allowed, return 403 Forbidden
+  if (!isAllowedOrigin(origin)) {
+    console.log(`Blocked request from disallowed origin: ${origin}`);
+    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+      status: 403,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+  
   try {
     // Get the query from URL params
     const url = new URL(req.url);
@@ -658,7 +736,7 @@ export async function GET(req: Request) {
       stream: true
     };
     
-    // Return the payload that would be sent to Anthropic
+    // Return the payload that would be sent to Anthropic with CORS headers
     return new Response(JSON.stringify({
       requestBody,
       searchResultsCount: searchResponse.results.length,
@@ -667,7 +745,12 @@ export async function GET(req: Request) {
     }, null, 2), {
       status: 200,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        // Add CORS headers
+        'Access-Control-Allow-Origin': origin || '*',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key'
       }
     });
   } catch (error) {

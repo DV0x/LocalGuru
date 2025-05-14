@@ -1,4 +1,5 @@
 import './globals.css';
+import { Providers } from './providers';
 
 export const viewport = {
   width: 'device-width',
@@ -25,13 +26,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className="max-w-md mx-auto bg-gray-50 min-h-screen">{children}</body>
+      <body className="max-w-md mx-auto bg-background min-h-screen">
+        <Providers>
+          {children}
+        </Providers>
+      </body>
     </html>
   );
 } 

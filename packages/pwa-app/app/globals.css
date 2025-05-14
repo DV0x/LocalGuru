@@ -40,6 +40,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  
+  /* Grid colors */
+  --grid-primary: 111 30 214; /* Electric purple */
+  --grid-secondary: 72 12 168; /* Deep purple */
 }
 
 .dark {
@@ -75,6 +79,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  
+  /* Grid colors for dark mode */
+  --grid-primary: 58 12 163; /* Deep purple */
+  --grid-secondary: 67 97 238; /* Electric blue */
 }
 
 @layer base {
@@ -84,6 +92,51 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* Isometric grid background */
+  .isometric-grid {
+    @apply relative;
+    background-color: #050714; /* Dark background */
+    background-attachment: fixed;
+    /* Allow interactions with elements on top */
+    pointer-events: auto;
+    z-index: 1;
+  }
+
+  .isometric-grid::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(19, 9, 53, 0.95) 0%, rgba(10, 14, 35, 0.95) 100%);
+    z-index: -1;
+    /* Ensure pseudo-element doesn't block interactions */
+    pointer-events: none;
+  }
+  
+  /* Ensure dropdown appears above other elements */
+  .dropdown-container {
+    position: relative;
+    z-index: 1000;
+  }
+  
+  /* Glow effects */
+  .glow-text {
+    text-shadow: 0 0 10px rgba(67, 97, 238, 0.7);
+  }
+  
+  .glow-box {
+    box-shadow: 0 0 20px rgba(67, 97, 238, 0.5);
+  }
+
+  /* Override any background issues for the location selector */
+  .location-selector-dropdown {
+    z-index: 9999 !important;
+    position: fixed !important;
+    background-color: var(--popover) !important;
+    pointer-events: auto !important;
   }
 }
 
