@@ -1,12 +1,12 @@
 // @deno-types="npm:@supabase/supabase-js@2.38.4"
-import { createClient } from 'npm:@supabase/supabase-js@2.38.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
 
 // CORS headers for browser requests
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-}
+};
 
 /**
  * Queue Stats API
@@ -17,7 +17,7 @@ const corsHeaders = {
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
@@ -25,14 +25,14 @@ Deno.serve(async (req: Request) => {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } },
+    );
 
     let queueStats;
     
     try {
       // Try to get queue statistics using the database function
-      const { data, error } = await supabaseClient.rpc('get_embedding_queue_stats')
+      const { data, error } = await supabaseClient.rpc('get_embedding_queue_stats');
       
       if (error) {
         console.error('RPC error:', error.message);
@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
       // Convert to array of objects for consistent format
       const subredditCountArray = Object.entries(subredditCounts).map(([subreddit, count]) => ({
         subreddit,
-        count
+        count,
       }));
       
       queueStats = {
@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
         failed_count: failedCount || 0,
         avg_processing_time_ms: 0, // Would need another query
         oldest_pending_job_age_hours: oldestPendingJobAgeHours,
-        subreddit_counts: subredditCountArray || []
+        subreddit_counts: subredditCountArray || [],
       };
     }
 
@@ -122,42 +122,42 @@ Deno.serve(async (req: Request) => {
       failed_count: 0,
       avg_processing_time_ms: 0,
       oldest_pending_job_age_hours: 0,
-      subreddit_counts: []
-    }
+      subreddit_counts: [],
+    };
 
     // Also get processing metrics
     const { data: metrics, error: metricsError } = await supabaseClient
       .from('embedding_metrics')
       .select('id, timestamp, job_type, content_length, chunk_count, processing_time_ms, subreddit, is_successful')
       .order('timestamp', { ascending: false })
-      .limit(100)
+      .limit(100);
 
     if (metricsError) {
-      console.warn(`Error fetching metrics: ${metricsError.message}`)
+      console.warn(`Error fetching metrics: ${metricsError.message}`);
     }
 
     // Calculate performance metrics
-    const performanceMetrics = calculatePerformanceMetrics(metrics || [])
+    const performanceMetrics = calculatePerformanceMetrics(metrics || []);
 
     // Format response
     const response = {
       queue_status: stats,
       performance_metrics: performanceMetrics,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    };
 
     return new Response(
       JSON.stringify(response),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+    );
   } catch (error) {
-    console.error('Error in queue-stats function:', error)
+    console.error('Error in queue-stats function:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+    );
   }
-})
+});
 
 /**
  * Calculate performance metrics from recent job results
@@ -169,53 +169,53 @@ function calculatePerformanceMetrics(metrics: any[]) {
       avg_chunks_per_job: 0,
       success_rate: 0,
       jobs_per_hour: 0,
-      recent_metrics: []
-    }
+      recent_metrics: [],
+    };
   }
 
   // Filter to successful jobs
-  const successfulJobs = metrics.filter(m => m.is_successful)
+  const successfulJobs = metrics.filter(m => m.is_successful);
   
   // Calculate average processing time
   const avgProcessingTime = successfulJobs.length
     ? successfulJobs.reduce((sum, job) => sum + job.processing_time_ms, 0) / successfulJobs.length
-    : 0
+    : 0;
 
   // Calculate average chunks per job
   const avgChunksPerJob = successfulJobs.length
     ? successfulJobs.reduce((sum, job) => sum + job.chunk_count, 0) / successfulJobs.length
-    : 0
+    : 0;
 
   // Calculate success rate
   const successRate = metrics.length
     ? (successfulJobs.length / metrics.length) * 100
-    : 0
+    : 0;
 
   // Calculate jobs per hour (based on recent metrics timespan)
-  let jobsPerHour = 0
+  let jobsPerHour = 0;
   if (metrics.length > 1) {
-    const newestTimestamp = new Date(metrics[0].timestamp).getTime()
-    const oldestTimestamp = new Date(metrics[metrics.length - 1].timestamp).getTime()
-    const timeSpanHours = (newestTimestamp - oldestTimestamp) / (1000 * 60 * 60)
+    const newestTimestamp = new Date(metrics[0].timestamp).getTime();
+    const oldestTimestamp = new Date(metrics[metrics.length - 1].timestamp).getTime();
+    const timeSpanHours = (newestTimestamp - oldestTimestamp) / (1000 * 60 * 60);
     
     // Only calculate if timespan is meaningful
     if (timeSpanHours > 0.01) { // More than ~36 seconds
-      jobsPerHour = metrics.length / timeSpanHours
+      jobsPerHour = metrics.length / timeSpanHours;
     }
   }
 
   // Get metrics for the last hour
-  const oneHourAgo = new Date()
-  oneHourAgo.setHours(oneHourAgo.getHours() - 1)
+  const oneHourAgo = new Date();
+  oneHourAgo.setHours(oneHourAgo.getHours() - 1);
   const recentMetrics = metrics.filter(m => 
-    new Date(m.timestamp).getTime() > oneHourAgo.getTime()
-  )
+    new Date(m.timestamp).getTime() > oneHourAgo.getTime(),
+  );
 
   return {
     avg_processing_time_ms: Math.round(avgProcessingTime),
     avg_chunks_per_job: parseFloat(avgChunksPerJob.toFixed(2)),
     success_rate: parseFloat(successRate.toFixed(2)),
     jobs_per_hour: parseFloat(jobsPerHour.toFixed(2)),
-    recent_metrics: recentMetrics.slice(0, 10) // Return only the 10 most recent
-  }
+    recent_metrics: recentMetrics.slice(0, 10), // Return only the 10 most recent
+  };
 } 

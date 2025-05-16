@@ -42,19 +42,19 @@ Deno.serve(async (req: Request) => {
     const results: Record<string, any> = {};
 
     // Check PostgreSQL version
-    results.pgVersion = await runQuery("SELECT version()");
+    results.pgVersion = await runQuery('SELECT version()');
 
     // Check if vector extension is available
-    results.vectorAvailable = await runQuery("SELECT * FROM pg_available_extensions WHERE name = 'vector'");
+    results.vectorAvailable = await runQuery('SELECT * FROM pg_available_extensions WHERE name = \'vector\'');
 
     // Check if vector extension is installed
-    results.vectorInstalled = await runQuery("SELECT * FROM pg_extension WHERE extname = 'vector'");
+    results.vectorInstalled = await runQuery('SELECT * FROM pg_extension WHERE extname = \'vector\'');
 
     // Get the schema of the vector extension
-    results.vectorSchema = await runQuery("SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector'");
+    results.vectorSchema = await runQuery('SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = \'vector\'');
 
     // Check if embedding column is using vector type
-    results.embeddingColumn = await runQuery("SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = 'reddit_posts' AND column_name = 'embedding'");
+    results.embeddingColumn = await runQuery('SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = \'reddit_posts\' AND column_name = \'embedding\'');
 
     // Create exec_sql function if it doesn't exist
     if (action === 'fix' || action === 'create_exec_sql') {
@@ -220,15 +220,15 @@ Deno.serve(async (req: Request) => {
     }
 
     // Test if vector operations work now
-    results.vectorOperationTest = await runQuery(`SELECT '[1,2,3]'::vector <=> '[4,5,6]'::vector AS distance`);
+    results.vectorOperationTest = await runQuery('SELECT \'[1,2,3]\'::vector <=> \'[4,5,6]\'::vector AS distance');
     
     return new Response(
       JSON.stringify({
         status: 'success',
         action,
-        results
+        results,
       }),
-      { headers }
+      { headers },
     );
   } catch (error) {
     console.error('Error processing request:', error);
@@ -236,12 +236,12 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ 
         error: 'An error occurred while processing your request', 
-        details: error.message 
+        details: error.message, 
       }),
       { 
         status: 500, 
-        headers: { 'Content-Type': 'application/json' } 
-      }
+        headers: { 'Content-Type': 'application/json' }, 
+      },
     );
   }
 }); 

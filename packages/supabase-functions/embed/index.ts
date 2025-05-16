@@ -1,24 +1,24 @@
 // @deno-types="npm:@supabase/supabase-js@2.38.4"
-import { createClient } from 'npm:@supabase/supabase-js@2.38.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
 // @deno-types="npm:openai@4.20.1"
-import OpenAI from 'npm:openai@4.20.1'
+import OpenAI from 'npm:openai@4.20.1';
 
 // CORS headers for browser requests
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+};
 
 const openai = new OpenAI({
   apiKey: Deno.env.get('OPENAI_API_KEY'),
-})
+});
 
 // Constants for chunking
-const MAX_TOKENS = 8000 // Buffer from the 8191 limit of text-embedding-3-small
-const MIN_CHUNK_SIZE = 200 // Minimum tokens for a chunk to be meaningful
-const OVERLAP_SIZE = 50 // Token overlap between chunks
-const TARGET_CHUNK_SIZE = 4000 // Target size for optimal embedding quality
+const MAX_TOKENS = 8000; // Buffer from the 8191 limit of text-embedding-3-small
+const MIN_CHUNK_SIZE = 200; // Minimum tokens for a chunk to be meaningful
+const OVERLAP_SIZE = 50; // Token overlap between chunks
+const TARGET_CHUNK_SIZE = 4000; // Target size for optimal embedding quality
 
 interface EmbeddingJob {
   jobId: string | number
@@ -58,42 +58,42 @@ interface JobResult {
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
     // Parse the jobs from the request body
-    const { jobs } = await req.json()
+    const { jobs } = await req.json();
     if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
       return new Response(
         JSON.stringify({ error: 'No jobs provided' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      )
+        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      );
     }
 
     // Create a Supabase client with the Deno runtime
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } },
+    );
 
     // Process jobs and return results
-    const result = await processJobs(supabaseClient, jobs)
+    const result = await processJobs(supabaseClient, jobs);
 
     // Return results
     return new Response(
       JSON.stringify(result),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+    );
   } catch (error) {
-    console.error('Error processing request:', error)
+    console.error('Error processing request:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+    );
   }
-})
+});
 
 // Split content into semantically meaningful chunks
 function chunkContent(content: string, contentType: 'post' | 'comment'): string[] {
@@ -134,19 +134,19 @@ function chunkContent(content: string, contentType: 'post' | 'comment'): string[
 
 // Process jobs and return results
 async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs: EmbeddingJob[]): Promise<JobResult> {
-  const completedJobs: CompletedJob[] = []
-  const failedJobs: FailedJob[] = []
+  const completedJobs: CompletedJob[] = [];
+  const failedJobs: FailedJob[] = [];
 
   for (const job of jobs) {
     try {
       // Get the content to embed using the specified function
       const { data: content, error: contentError } = await supabaseClient.rpc(
         job.contentFunction,
-        { post_record: { id: job.id } }
-      )
+        { post_record: { id: job.id } },
+      );
 
-      if (contentError) throw new Error(`Content function error: ${contentError.message}`)
-      if (!content) throw new Error('No content returned from content function')
+      if (contentError) throw new Error(`Content function error: ${contentError.message}`);
+      if (!content) throw new Error('No content returned from content function');
 
       // Determine content type from table name
       const contentType = job.table.includes('post') ? 'post' : 'comment';
@@ -165,7 +165,7 @@ async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs
         const embeddingResponse = await openai.embeddings.create({
           model: 'text-embedding-3-small',
           input: chunkText,
-          encoding_format: 'float'
+          encoding_format: 'float',
         });
         
         const embedding = embeddingResponse.data[0].embedding;
@@ -176,7 +176,7 @@ async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs
           contentType,
           chunkIndex: i,
           chunkText,
-          embedding
+          embedding,
         });
         
         // Insert chunk into database
@@ -187,7 +187,7 @@ async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs
             content_type: contentType,
             chunk_index: i,
             chunk_text: chunkText,
-            embedding: embedding
+            embedding: embedding,
           });
           
         if (insertError) {
@@ -211,9 +211,9 @@ async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs
         .from('util.embedding_queue')
         .update({ 
           status: 'completed',
-          processed_at: new Date().toISOString()
+          processed_at: new Date().toISOString(),
         })
-        .eq('id', job.jobId)
+        .eq('id', job.jobId);
 
       if (queueUpdateError) {
         console.warn(`Warning: Could not update queue status: ${queueUpdateError.message}`);
@@ -230,7 +230,7 @@ async function processJobs(supabaseClient: ReturnType<typeof createClient>, jobs
           .update({ 
             status: 'failed',
             last_error: error instanceof Error ? error.message : String(error),
-            processed_at: new Date().toISOString()
+            processed_at: new Date().toISOString(),
           })
           .eq('id', job.jobId);
       } catch (updateError) {

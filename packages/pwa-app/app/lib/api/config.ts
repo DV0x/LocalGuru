@@ -21,4 +21,6 @@ export const API_ROUTES = {
   streamingSearch: `${API_BASE_URL}/streaming-search`,
   search: `${API_BASE_URL}/search`,
   feedback: `${API_BASE_URL}/feedback`,
+  extractLocations: `${API_BASE_URL}/extract-locations`,
+  locationsNearby: `${API_BASE_URL}/locations/nearby`,
 }; 

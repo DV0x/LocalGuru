@@ -48,19 +48,19 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'Query is required' 
+          error: 'Query is required', 
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
-        }
+          status: 400,
+        },
       );
     }
 
     // 1. Analyze query to determine intent, entities, etc.
     log('Analyzing query', { query });
     const { data: analysisData, error: analysisError } = await supabase.functions.invoke('query-analysis', {
-      body: { query }
+      body: { query },
     });
     
     if (analysisError) {
@@ -86,8 +86,8 @@ Deno.serve(async (req) => {
         const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('query-embeddings', {
           body: { 
             query,
-            storeInCache: true
-          }
+            storeInCache: true,
+          },
         });
         
         if (embeddingError) {
@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
         embeddingSource = embeddingData.cached ? 'cache' : embeddingData.source_model;
         log('Successfully generated embeddings', { 
           source: embeddingSource,
-          dimensions: queryEmbedding.length
+          dimensions: queryEmbedding.length,
         });
       } catch (error) {
         log('Error generating embeddings', error);
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
                 'Content-Type': 'application/json',
                 'Authorization': req.headers.get('Authorization') || '',
               },
-              body: JSON.stringify({ query })
+              body: JSON.stringify({ query }),
             });
             
             if (analysisResponse.ok) {
@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
           subreddits: options.subreddits,
           metadata_boost: options.metadata_boost !== false, // Default to true
           use_fallback: options.use_fallback !== false, // Default to true
-          debug: options.debug || false
+          debug: options.debug || false,
         };
         
         log('Search parameters', searchOptions);
@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
         try {
           const response = await supabase.rpc(
             'search_content_multi_strategy',
-            searchOptions
+            searchOptions,
           );
           
           searchResults = response.data;
@@ -194,8 +194,8 @@ Deno.serve(async (req) => {
                 subreddits: options.subreddits,
                 metadata_boost: options.metadata_boost !== false,
                 use_fallback: true,
-                debug: options.debug || false
-              }
+                debug: options.debug || false,
+              },
             );
             
             searchResults = representationsResponse.data;
@@ -218,8 +218,8 @@ Deno.serve(async (req) => {
             'simple_text_search',
             {
               search_query: query,
-              max_results: options.limit || 20
-            }
+              max_results: options.limit || 20,
+            },
           );
           
           if (textSearchError) {
@@ -246,12 +246,12 @@ Deno.serve(async (req) => {
           query,
           analysis,
           error: `Search error: ${searchError.message || 'Unknown error'}`,
-          details: searchError
+          details: searchError,
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500
-        }
+          status: 500,
+        },
       );
     }
     
@@ -270,13 +270,13 @@ Deno.serve(async (req) => {
         stats: {
           resultCount: results.length,
           topScore: results.length > 0 ? results[0].match_score : null,
-          analysisAvailable: !!analysis
+          analysisAvailable: !!analysis,
         },
-        details: options.debug ? { options } : undefined
+        details: options.debug ? { options } : undefined,
       }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+      },
     );
     
   } catch (error) {
@@ -285,12 +285,12 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: false,
         error: `Unexpected error: ${error.message || 'Unknown error'}`,
-        details: String(error)
+        details: String(error),
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      }
+        status: 500,
+      },
     );
   }
 }); 

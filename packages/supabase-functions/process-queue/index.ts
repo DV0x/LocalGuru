@@ -1,13 +1,13 @@
 // @deno-types="npm:@supabase/supabase-js@2.38.4"
-import { createClient } from 'npm:@supabase/supabase-js@2.38.4'
-import OpenAI from 'npm:openai@4.20.1'
+import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
+import OpenAI from 'npm:openai@4.20.1';
 
 // CORS headers for browser requests
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+};
 
 // Configuration constants
 const BATCH_SIZE = 10;               // Maximum number of jobs to process in one run
@@ -20,7 +20,7 @@ console.log('OpenAI API Key exists:', !!Deno.env.get('OPENAI_API_KEY'));
 
 const openai = new OpenAI({
   apiKey: Deno.env.get('OPENAI_API_KEY'),
-})
+});
 
 interface EmbeddingJob {
   id: number
@@ -62,7 +62,7 @@ function estimateTokens(text: string): number {
 // Process a batch of jobs concurrently with rate limiting
 async function processBatch(
   supabaseClient: ReturnType<typeof createClient>,
-  jobs: EmbeddingJob[]
+  jobs: EmbeddingJob[],
 ): Promise<JobResult[]> {
   // Keep track of used tokens
   let usedTokens = 0;
@@ -101,7 +101,7 @@ async function processBatch(
 async function processJob(
   supabaseClient: ReturnType<typeof createClient>,
   job: EmbeddingJob,
-  currentTokenUsage: number
+  currentTokenUsage: number,
 ): Promise<JobResult> {
   const startTime = Date.now();
   let tokenCount = 0;
@@ -112,14 +112,14 @@ async function processJob(
     // Mark as processing via RPC
     await supabaseClient.rpc(
       'mark_job_processing',
-      { job_id: job.id }
+      { job_id: job.id },
     );
 
     // Get content using the specified function
     console.log(`Calling content function: ${job.content_function} with record ID: ${job.record_id}`);
     const { data: content, error: contentError } = await supabaseClient.rpc(
       job.content_function,
-      { post_record: { id: job.record_id } }
+      { post_record: { id: job.record_id } },
     );
 
     if (contentError) {
@@ -143,14 +143,14 @@ async function processJob(
       // Don't mark as failed, just skip and keep in queue
       await supabaseClient.rpc(
         'reset_job_status',
-        { job_id: job.id }
+        { job_id: job.id },
       );
       
       return {
         id: job.record_id,
         success: false,
         error: 'Skipped due to token budget constraints',
-        tokens: tokenCount
+        tokens: tokenCount,
       };
     }
 
@@ -169,15 +169,15 @@ async function processJob(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
         },
         body: JSON.stringify({
           contentId: job.record_id,
           contentType: contentType,
           includeContext: true,
-          refreshRepresentations: true  // CRITICAL: This must be true to store representations
-        })
-      }
+          refreshRepresentations: true,  // CRITICAL: This must be true to store representations
+        }),
+      },
     );
     
     if (!enhancedEmbedResponse.ok) {
@@ -195,8 +195,8 @@ async function processJob(
         p_table: job.table_name,
         p_id: job.record_id,
         p_column: job.embedding_column,
-        p_embedding: null  // We're not using this column anymore
-      }
+        p_embedding: null,  // We're not using this column anymore
+      },
     );
     
     // Record metrics
@@ -208,14 +208,14 @@ async function processJob(
         p_chunk_count: enhancedResult.embeddingTypes?.length || 0,
         p_processing_time_ms: Date.now() - startTime,
         p_subreddit: job.subreddit,
-        p_is_successful: true
-      }
+        p_is_successful: true,
+      },
     );
     
     // Mark the job as completed via RPC
     await supabaseClient.rpc(
       'mark_job_completed',
-      { job_id: job.id }
+      { job_id: job.id },
     );
     
     console.log(`Successfully processed job for ${job.record_id}`);
@@ -224,7 +224,7 @@ async function processJob(
       success: true,
       chunks: enhancedResult.embeddingTypes?.length || 0,
       tokens: tokenCount,
-      processingTime: Date.now() - startTime
+      processingTime: Date.now() - startTime,
     };
   } catch (error) {
     console.error(`Error processing job ${job.id}:`, error);
@@ -239,8 +239,8 @@ async function processJob(
         p_processing_time_ms: Date.now() - startTime,
         p_subreddit: job.subreddit,
         p_is_successful: false,
-        p_error_message: error instanceof Error ? error.message : String(error)
-      }
+        p_error_message: error instanceof Error ? error.message : String(error),
+      },
     );
     
     // Mark the job as failed via RPC
@@ -248,15 +248,15 @@ async function processJob(
       'mark_job_failed',
       { 
         job_id: job.id, 
-        error_message: error instanceof Error ? error.message : String(error)
-      }
+        error_message: error instanceof Error ? error.message : String(error),
+      },
     );
     
     return {
       id: job.record_id,
       success: false,
       error: error instanceof Error ? error.message : String(error),
-      processingTime: Date.now() - startTime
+      processingTime: Date.now() - startTime,
     };
   }
 }
@@ -280,14 +280,14 @@ Deno.serve(async (req: Request) => {
       specificSubreddit = body.subreddit || null;
     } catch (e) {
       // No valid JSON or no body, use defaults
-      console.log("Using default processing parameters");
+      console.log('Using default processing parameters');
     }
     
     // Create a Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } },
     );
 
     console.log(`Fetching up to ${customBatchSize} pending embedding jobs with priority >= ${customPriority}...`);
@@ -295,7 +295,7 @@ Deno.serve(async (req: Request) => {
     // Get pending jobs with priority filtering
     const rpcParams: Record<string, any> = { 
       limit_count: customBatchSize,
-      min_priority: customPriority
+      min_priority: customPriority,
     };
     
     // Add subreddit filter if specified
@@ -307,7 +307,7 @@ Deno.serve(async (req: Request) => {
     // Get pending jobs from util.embedding_queue via RPC call
     const { data: jobs, error: fetchError } = await supabaseClient.rpc(
       'get_pending_embedding_jobs_with_priority', 
-      rpcParams
+      rpcParams,
     );
 
     if (fetchError) {
@@ -319,14 +319,14 @@ Deno.serve(async (req: Request) => {
     if (!jobs || jobs.length === 0) {
       return new Response(
         JSON.stringify({ message: 'No pending jobs found' }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       );
     }
 
     // Process jobs in batch with type assertion to bypass type mismatch
     const results = await processBatch(
       supabaseClient as any, 
-      jobs
+      jobs,
     );
     
     // Analyze results
@@ -341,15 +341,15 @@ Deno.serve(async (req: Request) => {
         failed: results.length - successCount,
         estimated_tokens: tokenCount,
         total_chunks: chunkCount,
-        details: results
+        details: results,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
     );
   } catch (error) {
     console.error('Error processing queue:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
     );
   }
 }); 

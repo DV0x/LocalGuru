@@ -6,11 +6,11 @@ import OpenAI from 'npm:openai@4.28.0';
 import { enhanceIntentDetection, QueryIntent } from './enhanced-intent-detection.ts';
 
 // Add debug logging for environment variables
-console.log("DEBUG: Query Analysis Environment check");
-console.log("SUPABASE_URL present:", !!Deno.env.get('SUPABASE_URL'));
-console.log("SUPABASE_SERVICE_ROLE_KEY present:", !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
-console.log("OPENAI_API_KEY present:", !!Deno.env.get('OPENAI_API_KEY'));
-console.log("CUSTOM_SUPABASE_URL present:", !!Deno.env.get('CUSTOM_SUPABASE_URL'));
+console.log('DEBUG: Query Analysis Environment check');
+console.log('SUPABASE_URL present:', !!Deno.env.get('SUPABASE_URL'));
+console.log('SUPABASE_SERVICE_ROLE_KEY present:', !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+console.log('OPENAI_API_KEY present:', !!Deno.env.get('OPENAI_API_KEY'));
+console.log('CUSTOM_SUPABASE_URL present:', !!Deno.env.get('CUSTOM_SUPABASE_URL'));
 
 // Types for query analysis
 // Use the QueryIntent type imported from enhanced-intent-detection.ts
@@ -39,8 +39,8 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({ error: 'Query parameter is required and must be a string' }),
         { 
           status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
       );
     }
     
@@ -63,12 +63,12 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ 
           error: 'Error initializing OpenAI client', 
-          details: error instanceof Error ? error.message : String(error) 
+          details: error instanceof Error ? error.message : String(error), 
         }),
         { 
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
       );
     }
 
@@ -93,8 +93,8 @@ Deno.serve(async (req: Request) => {
         p_locations: queryAnalysis.locations,
         p_intent: queryAnalysis.intent,
         p_enhanced_queries: [],  // Passing empty array since we're not generating enhanced queries
-        p_user_id: userId || null
-      }
+        p_user_id: userId || null,
+      },
     );
 
     if (storeError) {
@@ -108,8 +108,8 @@ Deno.serve(async (req: Request) => {
         ...queryAnalysis,
       }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
     );
   } catch (error: unknown) {
     console.error('Error processing query analysis:', error);
@@ -117,12 +117,12 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ 
         error: 'Error processing query analysis', 
-        details: error instanceof Error ? error.message : String(error) 
+        details: error instanceof Error ? error.message : String(error), 
       }),
       { 
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
     );
   }
 });
@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
  */
 async function analyzeQuery(
   query: string,
-  openai: OpenAI
+  openai: OpenAI,
 ): Promise<QueryAnalysisResult> {
   const prompt = `
 Analyze the following search query and extract structured information about it:
@@ -172,7 +172,7 @@ Provide only the JSON, with no additional text.
     model: 'gpt-3.5-turbo',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
-    response_format: { type: 'json_object' }
+    response_format: { type: 'json_object' },
   });
 
   try {
@@ -238,7 +238,7 @@ function enhanceDietaryPreferences(analysis: QueryAnalysisResult, query: string)
     {term: 'dairy-free', variations: ['dairy-free', 'dairy free', 'no dairy', 'lactose-free', 'lactose intolerant']},
     {term: 'keto', variations: ['keto', 'ketogenic', 'low-carb']},
     {term: 'paleo', variations: ['paleo', 'paleolithic']},
-    {term: 'pescatarian', variations: ['pescatarian', 'fish but no meat']}
+    {term: 'pescatarian', variations: ['pescatarian', 'fish but no meat']},
   ];
   
   dietaryTerms.forEach(({ term, variations }) => {
@@ -272,7 +272,7 @@ function enhancePriceSensitivity(analysis: QueryAnalysisResult, query: string): 
   const budgetTerms = [
     {term: 'budget-friendly', variations: ['cheap', 'affordable', 'inexpensive', 'budget', 'low cost', 'low-cost']},
     {term: 'mid-range', variations: ['moderate', 'mid-range', 'mid range', 'reasonable']},
-    {term: 'luxury', variations: ['expensive', 'high-end', 'fancy', 'luxury', 'upscale']}
+    {term: 'luxury', variations: ['expensive', 'high-end', 'fancy', 'luxury', 'upscale']},
   ];
   
   budgetTerms.forEach(({ term, variations }) => {
@@ -294,7 +294,7 @@ function enhanceTimeRelevance(analysis: QueryAnalysisResult, query: string): voi
     {term: 'breakfast', variations: ['breakfast', 'morning meal', 'brunch']},
     {term: 'lunch', variations: ['lunch', 'midday', 'noon']},
     {term: 'dinner', variations: ['dinner', 'evening meal', 'supper']},
-    {term: 'late-night', variations: ['late night', 'late-night', 'after hours']}
+    {term: 'late-night', variations: ['late night', 'late-night', 'after hours']},
   ];
   
   timeTerms.forEach(({ term, variations }) => {
@@ -353,17 +353,17 @@ function transferLocationsFromEntities(analysis: QueryAnalysisResult): void {
 function normalizeLocation(location: string): string {
   // Map of common abbreviations to full names
   const locationMap: Record<string, string> = {
-    "sf": "San Francisco",
-    "nyc": "New York City",
-    "la": "Los Angeles",
-    "chi": "Chicago",
-    "philly": "Philadelphia",
-    "dc": "Washington DC",
-    "atl": "Atlanta",
-    "bos": "Boston",
-    "sd": "San Diego",
-    "pdx": "Portland",
-    "sea": "Seattle",
+    'sf': 'San Francisco',
+    'nyc': 'New York City',
+    'la': 'Los Angeles',
+    'chi': 'Chicago',
+    'philly': 'Philadelphia',
+    'dc': 'Washington DC',
+    'atl': 'Atlanta',
+    'bos': 'Boston',
+    'sd': 'San Diego',
+    'pdx': 'Portland',
+    'sea': 'Seattle',
     // Add more mappings as needed
   };
 
@@ -396,7 +396,7 @@ function handleDefaultLocation(analysis: {
   const isRedundant = queryLocationsNormalized.some(loc => 
     loc === normalizedDefault ||
     normalizedDefault.includes(loc) ||
-    loc.includes(normalizedDefault)
+    loc.includes(normalizedDefault),
   );
   
   if (!isRedundant) {

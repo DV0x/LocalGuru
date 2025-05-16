@@ -1,13 +1,13 @@
 // Enhanced Embeddings Edge Function for generating better vectors
-import { createClient } from 'npm:@supabase/supabase-js@2.38.4'
-import OpenAI from 'npm:openai@4.20.1'
-import { extractEntities, EntityExtractionResult } from '../_shared/entity-extraction.ts'
+import { createClient } from 'npm:@supabase/supabase-js@2.38.4';
+import OpenAI from 'npm:openai@4.20.1';
+import { extractEntities, EntityExtractionResult } from '../_shared/entity-extraction.ts';
 import { 
   buildThreadContext, 
   createThreadEnhancedInput, 
   getThreadSummary,
-  ThreadContext 
-} from '../_shared/thread-context.ts'
+  ThreadContext, 
+} from '../_shared/thread-context.ts';
 
 // Request interface
 interface EmbeddingRequest {
@@ -101,7 +101,7 @@ async function createEmbedding(text: string): Promise<number[]> {
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: text,
-      encoding_format: 'float'
+      encoding_format: 'float',
     });
     
     return response.data[0].embedding;
@@ -117,7 +117,7 @@ async function generateMultiRepresentationEmbeddings(
   contentType: 'post' | 'comment',
   threadContext: ThreadContext,
   extractedEntities: EntityExtractionResult,
-  includeContext: boolean
+  includeContext: boolean,
 ): Promise<Record<string, { embedding: number[], metadata: Record<string, any> }>> {
   // Base content text
   const contentText = contentType === 'post' 
@@ -133,7 +133,7 @@ async function generateMultiRepresentationEmbeddings(
       topics: extractedEntities.topics,
       entities: extractedEntities.entities,
       locations: extractedEntities.locations,
-      semanticTags: extractedEntities.semanticTags
+      semanticTags: extractedEntities.semanticTags,
     };
     
     // 1. Basic full content embedding
@@ -143,8 +143,8 @@ async function generateMultiRepresentationEmbeddings(
         type: 'basic',
         length: contentText.length,
         tokenEstimate: Math.ceil(contentText.length / 4), // Rough estimate
-        ...entityMetadata  // Add entity data to metadata
-      }
+        ...entityMetadata,  // Add entity data to metadata
+      },
     };
     
     // 2. For posts, create title-specific embedding
@@ -155,8 +155,8 @@ async function generateMultiRepresentationEmbeddings(
           type: 'title',
           length: content.title.length,
           tokenEstimate: Math.ceil(content.title.length / 4),
-          ...entityMetadata  // Add entity data to metadata
-        }
+          ...entityMetadata,  // Add entity data to metadata
+        },
       };
     }
     
@@ -181,8 +181,8 @@ Content: ${content.content || ''}`;
           {
             topics: extractedEntities.topics,
             locations: extractedEntities.locations,
-            semanticTags: extractedEntities.semanticTags
-          }
+            semanticTags: extractedEntities.semanticTags,
+          },
         );
       }
       
@@ -194,8 +194,8 @@ Content: ${content.content || ''}`;
           length: enhancedContent.length,
           tokenEstimate: Math.ceil(enhancedContent.length / 4),
           thread_context: threadContext,
-          ...entityMetadata  // Add entity data to metadata
-        }
+          ...entityMetadata,  // Add entity data to metadata
+        },
       };
     }
     
@@ -214,7 +214,7 @@ async function storeContentRepresentation(
   contentType: 'post' | 'comment',
   representationType: string,
   embedding: number[],
-  metadata: Record<string, any> = {}
+  metadata: Record<string, any> = {},
 ): Promise<string | null> {
   try {
     console.log(`Storing ${representationType} representation for ${contentType} ${contentId}...`);
@@ -227,8 +227,8 @@ async function storeContentRepresentation(
         p_content_type: contentType,
         p_representation_type: representationType,
         p_embedding_vector: embedding,
-        p_metadata: metadata
-      }
+        p_metadata: metadata,
+      },
     );
     
     if (error) {
@@ -253,7 +253,7 @@ Deno.serve(async (req: Request) => {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Connection': 'keep-alive'
+    'Connection': 'keep-alive',
   };
 
   // Handle OPTIONS request
@@ -270,7 +270,7 @@ Deno.serve(async (req: Request) => {
       contentId, 
       contentType, 
       includeContext = true,
-      refreshRepresentations = false
+      refreshRepresentations = false,
     } = requestData;
     
     console.log(`Processing ${contentType} with ID: ${contentId}, includeContext: ${includeContext}, refreshRepresentations: ${refreshRepresentations}`);
@@ -283,8 +283,8 @@ Deno.serve(async (req: Request) => {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
-        }
-      }
+        },
+      },
     );
     
     // Get content data
@@ -292,7 +292,7 @@ Deno.serve(async (req: Request) => {
     let threadContext: ThreadContext = {
       postId: '',
       postTitle: '',
-      subreddit: ''
+      subreddit: '',
     };
     let contentText = '';
     
@@ -311,7 +311,7 @@ Deno.serve(async (req: Request) => {
         console.error(`Post not found: ${error?.message}`);
         return new Response(
           JSON.stringify({ error: `Post not found: ${error?.message}` }),
-          { status: 404, headers }
+          { status: 404, headers },
         );
       }
       
@@ -322,7 +322,7 @@ Deno.serve(async (req: Request) => {
       threadContext = {
         postId: post.id,
         postTitle: post.title,
-        subreddit: post.subreddit
+        subreddit: post.subreddit,
       };
       
     } else if (contentType === 'comment') {
@@ -338,7 +338,7 @@ Deno.serve(async (req: Request) => {
         console.error(`Comment not found: ${error?.message}`);
         return new Response(
           JSON.stringify({ error: `Comment not found: ${error?.message}` }),
-          { status: 404, headers }
+          { status: 404, headers },
         );
       }
       
@@ -350,13 +350,13 @@ Deno.serve(async (req: Request) => {
         postId: comment.post_id,
         postTitle: comment.post?.title || '',
         subreddit: comment.post?.subreddit || '',
-        path: comment.path
+        path: comment.path,
       };
     } else {
       console.error(`Invalid content type: ${contentType}`);
       return new Response(
         JSON.stringify({ error: `Invalid content type: ${contentType}` }),
-        { status: 400, headers }
+        { status: 400, headers },
       );
     }
 
@@ -381,9 +381,9 @@ Deno.serve(async (req: Request) => {
               {
                 id: (content as Comment).post_id,
                 title: threadContext.postTitle,
-                subreddit: threadContext.subreddit
+                subreddit: threadContext.subreddit,
               },
-              parents as ParentComment[]
+              parents as ParentComment[],
             );
           }
         }
@@ -396,14 +396,14 @@ Deno.serve(async (req: Request) => {
             contentType, 
             contentType === 'post' 
               ? { subreddit: threadContext.subreddit, title: threadContext.postTitle } 
-              : { subreddit: threadContext.subreddit, postTitle: threadContext.postTitle }
+              : { subreddit: threadContext.subreddit, postTitle: threadContext.postTitle },
           );
           
           console.log('Entities extracted successfully:', {
             topicCount: extractedEntities.topics.length,
             locationCount: extractedEntities.locations.length,
             semanticTagCount: extractedEntities.semanticTags.length,
-            entityTypes: Object.keys(extractedEntities.entities)
+            entityTypes: Object.keys(extractedEntities.entities),
           });
         } catch (entityError) {
           console.error('Entity extraction failed:', entityError);
@@ -412,7 +412,7 @@ Deno.serve(async (req: Request) => {
             entities: {},
             topics: [],
             locations: [],
-            semanticTags: []
+            semanticTags: [],
           };
         }
         
@@ -424,7 +424,7 @@ Deno.serve(async (req: Request) => {
           contentType,
           threadContext,
           extractedEntities,
-          includeContext
+          includeContext,
         );
         
         console.log(`Generated ${Object.keys(embeddings).length} embedding types`);
@@ -444,7 +444,7 @@ Deno.serve(async (req: Request) => {
               topics: extractedEntities.topics,
               entities: extractedEntities.entities,
               locations: extractedEntities.locations,
-              semanticTags: extractedEntities.semanticTags
+              semanticTags: extractedEntities.semanticTags,
             };
             
             // For comments, ensure thread context is included
@@ -460,7 +460,7 @@ Deno.serve(async (req: Request) => {
               contentType,
               repType,
               repData.embedding,
-              enhancedMetadata  // Use enhanced metadata with entities
+              enhancedMetadata,  // Use enhanced metadata with entities
             );
             
             if (repId) {
@@ -472,7 +472,7 @@ Deno.serve(async (req: Request) => {
         // Chunk content for long posts/comments
         console.log('Processing content chunking...');
         let chunks: string[] = [];
-        let chunkEmbeddings: Record<string, number[]>[] = [];
+        const chunkEmbeddings: Record<string, number[]>[] = [];
         
         if (contentText.length > 500) {
           // Only chunk if content is substantial
@@ -484,7 +484,7 @@ Deno.serve(async (req: Request) => {
             try {
               const chunkEmbedding = await createEmbedding(chunk);
               chunkEmbeddings.push({
-                [`chunk_${index + 1}`]: chunkEmbedding
+                [`chunk_${index + 1}`]: chunkEmbedding,
               });
             } catch (chunkError) {
               console.error(`Error embedding chunk ${index + 1}:`, chunkError);
@@ -502,7 +502,7 @@ Deno.serve(async (req: Request) => {
               extracted_entities: extractedEntities.entities,
               extracted_topics: extractedEntities.topics,
               extracted_locations: extractedEntities.locations,
-              semantic_tags: extractedEntities.semanticTags
+              semantic_tags: extractedEntities.semanticTags,
             })
             .eq('id', contentId);
         } else {
@@ -512,7 +512,7 @@ Deno.serve(async (req: Request) => {
             parentId: threadContext.parentId,
             path: threadContext.path,
             depth: threadContext.depth,
-            summary: getThreadSummary(threadContext)
+            summary: getThreadSummary(threadContext),
           });
           
           await supabaseClient
@@ -548,18 +548,18 @@ Deno.serve(async (req: Request) => {
         contentId,
         contentType,
         status: 'processing',
-        message: 'Embedding generation started in the background'
+        message: 'Embedding generation started in the background',
       }),
-      { headers }
+      { headers },
     );
   } catch (error) {
     console.error('Error processing request:', error);
     return new Response(
       JSON.stringify({ 
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
+        stack: error instanceof Error ? error.stack : undefined,
       }),
-      { status: 500, headers }
+      { status: 500, headers },
     );
   }
 }); 

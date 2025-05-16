@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { useStreamingSearch } from "@/app/hooks/use-streaming-search";
+import { useMapContext } from "@/app/contexts/map-context";
 import { SearchBar } from "@/app/components/search-bar";
 import { MapPlaceholder } from "@/app/components/map-placeholder";
 import { DraggableContentOverlay, DraggableContentOverlayRef } from "@/app/components/draggable-content-overlay";
@@ -14,12 +15,37 @@ export default function SearchResultsPage() {
   const hasInitializedRef = useRef(false);
   const overlayRef = useRef<DraggableContentOverlayRef>(null);
   
+  // Get the map context for updating location features
+  const { updateFeaturesFromSearchResults, isLoadingLocations } = useMapContext();
+  
   // Extract query from URL parameters and decode it
   const queryParam = typeof params.query === 'string' ? params.query : params.query?.[0] || '';
   const decodedQuery = decodeURIComponent(queryParam);
   
   // Initialize streaming search hook
   const { status, results, content, error, search, stopSearch, isLoading } = useStreamingSearch();
+  
+  // Add a ref to track processed result batches
+  const processedResultsRef = useRef<Set<string>>(new Set());
+  
+  // Process locations when search results change - with duplicate prevention
+  useEffect(() => {
+    if (results.length > 0) {
+      // Create a unique ID for this batch of results (using first and last result IDs)
+      const firstId = results[0]?.id || '';
+      const lastId = results[results.length - 1]?.id || '';
+      const batchId = `${firstId}-${lastId}-${results.length}`;
+      
+      // Only process if we haven't seen this exact batch before
+      if (!processedResultsRef.current.has(batchId)) {
+        console.log(`Processing ${results.length} search results for location extraction (batch: ${batchId})`);
+        processedResultsRef.current.add(batchId);
+        updateFeaturesFromSearchResults(results);
+      } else {
+        console.log(`Skipping duplicate batch of results: ${batchId}`);
+      }
+    }
+  }, [results, updateFeaturesFromSearchResults]);
   
   // Start search when page loads with the URL query
   useEffect(() => {
@@ -162,7 +188,7 @@ export default function SearchResultsPage() {
         ref={overlayRef}
         content={content}
         results={results}
-        isLoading={isLoading}
+        isLoading={isLoading || isLoadingLocations}
         error={error}
         status={status}
       />

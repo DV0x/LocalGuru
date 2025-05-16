@@ -47,14 +47,14 @@ Deno.serve(async (req: Request) => {
       maxResults = 15, 
       useTextSearch = false, 
       subreddit = null,
-      debug = false
+      debug = false,
     } = await req.json() as SearchRequest;
 
     // Validate request
     if (!query || typeof query !== 'string' || query.trim() === '') {
       return new Response(
         JSON.stringify({ error: 'Invalid query parameter. Please provide a non-empty search query.' }),
-        { status: 400, headers }
+        { status: 400, headers },
       );
     }
 
@@ -72,8 +72,8 @@ Deno.serve(async (req: Request) => {
           { 
             search_query: query,
             filter_subreddit: subreddit,
-            max_results: maxResults
-          }
+            max_results: maxResults,
+          },
         );
         
         if (error) {
@@ -85,9 +85,9 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({ 
             results: data,
             searchType: 'text_backup',
-            query: query
+            query: query,
           }),
-          { headers }
+          { headers },
         );
       } catch (backupError) {
         console.warn('Backup search failed, falling back to text_search:', backupError);
@@ -98,8 +98,8 @@ Deno.serve(async (req: Request) => {
           { 
             search_query: query,
             filter_subreddit: subreddit,
-            max_results: maxResults
-          }
+            max_results: maxResults,
+          },
         );
         
         if (error) throw error;
@@ -108,9 +108,9 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({ 
             results: data,
             searchType: 'text',
-            query: query
+            query: query,
           }),
-          { headers }
+          { headers },
         );
       }
     }
@@ -123,7 +123,7 @@ Deno.serve(async (req: Request) => {
     const embeddingPromise = openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: query,
-      encoding_format: 'float'
+      encoding_format: 'float',
     });
 
     // Register the promise with EdgeRuntime.waitUntil if it's a long operation
@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
         EdgeRuntime.waitUntil(embeddingPromise);
       }
     } catch (e) {
-      console.warn("EdgeRuntime.waitUntil not available in this environment");
+      console.warn('EdgeRuntime.waitUntil not available in this environment');
     }
     
     const embeddingResponse = await embeddingPromise;
@@ -156,11 +156,11 @@ Deno.serve(async (req: Request) => {
             type: typeof embedding,
             isArray: Array.isArray(embedding),
             sample: embeddingSample,
-            embeddingTime: embeddingTime
+            embeddingTime: embeddingTime,
           },
-          fullEmbedding: embedding  // This could be very large
+          fullEmbedding: embedding,  // This could be very large
         }),
-        { headers }
+        { headers },
       );
     }
 
@@ -184,8 +184,8 @@ Deno.serve(async (req: Request) => {
           similarity_threshold_docs: similarityThresholdDocs,
           similarity_threshold_chunks: similarityThresholdChunks,
           docs_weight: docsWeight,
-          max_results: maxResults
-        }
+          max_results: maxResults,
+        },
       );
       
       if (error) {
@@ -205,10 +205,10 @@ Deno.serve(async (req: Request) => {
           stats: {
             embeddingTimeMs: embeddingTime,
             totalTimeMs: totalTime,
-            resultCount: data.length
-          }
+            resultCount: data.length,
+          },
         }),
-        { headers }
+        { headers },
       );
     } catch (vectorSearchError) {
       console.warn('Vector search failed, falling back to text search:', vectorSearchError);
@@ -220,8 +220,8 @@ Deno.serve(async (req: Request) => {
         { 
           search_query: query,
           filter_subreddit: subreddit,
-          max_results: maxResults
-        }
+          max_results: maxResults,
+        },
       );
       
       if (error) throw error;
@@ -231,9 +231,9 @@ Deno.serve(async (req: Request) => {
           results: data,
           searchType: 'text_fallback',
           query: query,
-          error: vectorSearchError.message
+          error: vectorSearchError.message,
         }),
-        { headers }
+        { headers },
       );
     }
   } catch (error) {
@@ -242,12 +242,12 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ 
         error: 'An error occurred while processing your search request', 
-        details: error.message 
+        details: error.message, 
       }),
       { 
         status: 500, 
-        headers: { 'Content-Type': 'application/json' } 
-      }
+        headers: { 'Content-Type': 'application/json' }, 
+      },
     );
   }
 }); 

@@ -49,7 +49,7 @@ export function buildThreadContext(
   parentComments?: Array<{ 
     id: string; 
     content: string;
-  }>
+  }>,
 ): ThreadContext {
   // Start with basic context
   const context: ThreadContext = {
@@ -84,7 +84,7 @@ export function createThreadEnhancedInput(
     topics?: string[];
     locations?: string[];
     semanticTags?: string[];
-  }
+  },
 ): string {
   // Build header with post information
   const postContext = threadContext.postTitle 

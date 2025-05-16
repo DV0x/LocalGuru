@@ -14,7 +14,7 @@ const SOCIAL_CONNECTION_PATTERNS = [
   'meetup with', 'meet up with',
   'socialize with', 'socializing with',
   'network with', 'networking with',
-  'get to know', 'getting to know'
+  'get to know', 'getting to know',
 ];
 
 // Interface for query analysis result
@@ -37,7 +37,7 @@ export function isSocialConnectionQuery(query: string): boolean {
   
   // Check if query contains any social connection patterns
   return SOCIAL_CONNECTION_PATTERNS.some(pattern => 
-    normalizedQuery.includes(pattern)
+    normalizedQuery.includes(pattern),
   );
 }
 
@@ -49,7 +49,7 @@ export function isSocialConnectionQuery(query: string): boolean {
  */
 export function enhanceIntentDetection(
   query: string, 
-  analysisResult: QueryAnalysisResult
+  analysisResult: QueryAnalysisResult,
 ): QueryAnalysisResult {
   // If this is not a social connection query or already has how_to intent, return as is
   if (!isSocialConnectionQuery(query) || analysisResult.intent === 'how_to') {

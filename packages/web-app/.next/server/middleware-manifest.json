@@ -18,39 +18,11 @@
       "assets": [],
       "env": {
         "__NEXT_BUILD_ID": "development",
-        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "+yyAHhlIIdrhlUrf4fal74StiXs+0DJB54M4ojTmht0="
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "D1DFNI9apvgWKdf+17V3RE5PWLqMr+MDsXyk8mvLFOc="
       }
     }
   },
-  "functions": {
-    "/api/streaming-search/route": {
-      "files": [
-        "server/middleware-build-manifest.js",
-        "server/middleware-react-loadable-manifest.js",
-        "server/next-font-manifest.js",
-        "server/interception-route-rewrite-manifest.js",
-        "server/edge-runtime-webpack.js",
-        "server/app/api/streaming-search/route.js"
-      ],
-      "name": "app/api/streaming-search/route",
-      "page": "/api/streaming-search/route",
-      "matchers": [
-        {
-          "regexp": "^/api/streaming\\-search$",
-          "originalSource": "/api/streaming-search"
-        }
-      ],
-      "wasm": [],
-      "assets": [],
-      "env": {
-        "__NEXT_BUILD_ID": "development",
-        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "+yyAHhlIIdrhlUrf4fal74StiXs+0DJB54M4ojTmht0="
-      },
-      "regions": [
-        "auto"
-      ]
-    }
-  },
+  "functions": {},
   "sortedMiddleware": [
     "/"
   ]

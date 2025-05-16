@@ -35,7 +35,7 @@ export async function extractEntities(
     subreddit?: string;
     title?: string;
     postTitle?: string;
-  }
+  },
 ): Promise<EntityExtractionResult> {
   // Initialize OpenAI
   const openai = new OpenAI({
@@ -47,7 +47,7 @@ export async function extractEntities(
     entities: {},
     topics: [],
     locations: [],
-    semanticTags: []
+    semanticTags: [],
   };
 
   try {
@@ -132,7 +132,7 @@ Only include categories that have values. If no entities of a certain type are f
       entities: result.entities || {},
       topics: result.topics || [],
       locations: result.locations || [],
-      semanticTags: result.semanticTags || []
+      semanticTags: result.semanticTags || [],
     };
   } catch (error) {
     console.error('Error extracting entities:', error);

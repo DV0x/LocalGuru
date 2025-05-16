@@ -1,49 +1,67 @@
 "use client";
 
-import { MapPin } from "lucide-react";
+import dynamic from 'next/dynamic';
+import { useMapContext } from '../contexts/map-context';
+import { Skeleton } from './ui/skeleton';
+import MapErrorBoundary from './ui/map-error-boundary';
+import { Loader2 } from 'lucide-react';
+
+// Dynamic import to prevent SSR issues with mapbox
+const InteractiveMap = dynamic(
+  () => import('./ui/interactive-map'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full bg-gray-900 rounded-lg">
+        <Skeleton className="w-full h-full rounded-lg" />
+      </div>
+    )
+  }
+);
 
 interface MapPlaceholderProps {
-  location: string;
+  location?: string;
 }
 
-export function MapPlaceholder({ location }: MapPlaceholderProps) {
+type LocationCoordinates = {
+  [key: string]: { longitude: number; latitude: number };
+};
+
+// Component to show loading state over the map
+const MapLoadingOverlay = () => (
+  <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20 backdrop-blur-sm">
+    <div className="bg-card/90 p-4 rounded-lg shadow-lg flex items-center gap-3">
+      <Loader2 className="w-5 h-5 text-primary animate-spin" />
+      <span className="text-sm font-medium">Extracting locations...</span>
+    </div>
+  </div>
+);
+
+export function MapPlaceholder({ location = 'San Francisco' }: MapPlaceholderProps) {
+  // Get map context to access loading state and features
+  const { isLoadingLocations, searchResultFeatures } = useMapContext();
+  
+  // Default coordinates for supported locations
+  const locationCoordinates: LocationCoordinates = {
+    'San Francisco': { longitude: -122.4194, latitude: 37.7749 },
+    // Add other cities as they become available
+  };
+
+  const coordinates = locationCoordinates[location] || locationCoordinates['San Francisco'];
+
   return (
-    <div className="w-full h-full bg-gradient-to-b from-slate-800 to-slate-900 relative">
-      {/* Grid overlay for map effect */}
-      <div 
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)",
-          backgroundSize: "50px 50px"
-        }}
-      />
+    <div className="w-full h-full rounded-lg overflow-hidden relative">
+      <MapErrorBoundary>
+        <InteractiveMap initialLocation={coordinates} />
+        {isLoadingLocations && <MapLoadingOverlay />}
+      </MapErrorBoundary>
       
-      {/* Center marker */}
-      <div className="absolute inset-0 flex items-center justify-center flex-col">
-        <MapPin className="h-10 w-10 text-primary animate-bounce" />
-        <div className="bg-card/80 backdrop-blur-sm px-3 py-1.5 rounded-full mt-2 text-sm font-medium">
-          {location}
+      {/* Show pin count when we have features */}
+      {searchResultFeatures.length > 0 && (
+        <div className="absolute top-4 right-4 bg-card/80 text-card-foreground px-3 py-1.5 rounded-full backdrop-blur-sm z-10 shadow-lg text-xs font-medium">
+          {searchResultFeatures.length} {searchResultFeatures.length === 1 ? 'location' : 'locations'} found
         </div>
-        <div className="mt-4 text-center max-w-xs bg-card/60 backdrop-blur-sm p-4 rounded-lg">
-          <p className="text-sm text-card-foreground/80">
-            Map will be integrated with Mapbox in a future update
-          </p>
-        </div>
-      </div>
-      
-      {/* Location markers */}
-      <div className="absolute top-1/4 left-1/3 flex flex-col items-center">
-        <div className="w-3 h-3 bg-primary/70 rounded-full"></div>
-        <div className="w-8 h-8 bg-primary/20 rounded-full absolute -inset-2.5 animate-ping"></div>
-      </div>
-      <div className="absolute bottom-1/3 right-1/4 flex flex-col items-center">
-        <div className="w-3 h-3 bg-accent/70 rounded-full"></div>
-        <div className="w-8 h-8 bg-accent/20 rounded-full absolute -inset-2.5 animate-ping" style={{ animationDelay: "1s" }}></div>
-      </div>
-      <div className="absolute top-1/2 right-1/3 flex flex-col items-center">
-        <div className="w-3 h-3 bg-destructive/70 rounded-full"></div>
-        <div className="w-8 h-8 bg-destructive/20 rounded-full absolute -inset-2.5 animate-ping" style={{ animationDelay: "0.5s" }}></div>
-      </div>
+      )}
     </div>
   );
 } 
