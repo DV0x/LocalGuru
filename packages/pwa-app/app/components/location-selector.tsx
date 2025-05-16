@@ -27,10 +27,19 @@ export function LocationSelector({
   // Available and coming soon locations
   const locations = [
     { name: "San Francisco, CA", available: true },
-    { name: "New York, NY", available: false },
-    { name: "Los Angeles, CA", available: false },
-    { name: "Chicago, IL", available: false },
-    { name: "Seattle, WA", available: false },
+    { name: "New York, NY", available: true },
+    { name: "Los Angeles, CA", available: true },
+    { name: "Chicago, IL", available: true },
+    { name: "Seattle, WA", available: true },
+    { name: "Boston, MA", available: true },
+    { name: "Austin, TX", available: true },
+    { name: "Miami, FL", available: true },
+    { name: "Denver, CO", available: true },
+    { name: "Portland, OR", available: true },
+    { name: "Nashville, TN", available: true },
+    { name: "London, UK", available: true },
+    { name: "Paris, France", available: true },
+    { name: "Tokyo, Japan", available: true },
   ];
 
   // Toggle dropdown
@@ -74,6 +83,7 @@ export function LocationSelector({
     if (onLocationChange) {
       // Extract just the city name to pass back
       const city = locationName.split(',')[0].trim();
+      console.log(`LocationSelector selected: ${locationName}, passing city: "${city}"`);
       onLocationChange(city);
     }
   };

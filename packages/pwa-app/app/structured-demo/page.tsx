@@ -30,22 +30,33 @@ function StructuredDemoContent() {
   // Selected location for details
   const [selectedLocation, setSelectedLocation] = useState<any | null>(null);
   
+  // Track the currently selected city
+  const [currentCity, setCurrentCity] = useState<string>("San Francisco");
+  
   // Get map context for interactions
   const mapContext = useMapContext();
   
   // Handle search submission
   const handleSearch = (searchQuery: string) => {
     if (searchQuery.trim()) {
-      search(searchQuery);
+      console.log(`Searching for "${searchQuery}" in location: "${currentCity}"`);
+      search(searchQuery, currentCity);
     }
   };
   
   // Handle location change
   const handleLocationChange = (location: string) => {
-    console.log(`Location changed to: ${location}`);
+    console.log(`Location changed to: "${location}"`);
+    
+    // Update the current location state
+    setCurrentCity(location);
+    
     // If we have an active search, re-run it with the new location
-    if (query && status !== 'idle') {
+    if (query && query.trim()) {
+      console.log(`Re-running search for "${query}" with location: "${location}"`);
       search(query, location);
+    } else {
+      console.log('No active query to search with the new location');
     }
   };
   
@@ -72,8 +83,13 @@ function StructuredDemoContent() {
     <div className="relative flex flex-col h-screen bg-background">
       {/* Search Header */}
       <header className="absolute top-0 left-0 right-0 z-40 p-4">
-        <div className="text-center mb-2 text-sm font-medium text-primary">
-          Structured JSON Search Demo
+        <div className="text-center mb-2">
+          <div className="text-sm font-medium text-primary">
+            Structured JSON Search Demo
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            Try searching in different cities by changing the location!
+          </div>
         </div>
         <SearchBar 
           onSearch={handleSearch} 

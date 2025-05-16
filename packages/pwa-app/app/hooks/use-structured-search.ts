@@ -129,7 +129,8 @@ export function useStructuredSearch() {
       // Clear map features
       mapContext.setSearchResultFeatures([]);
       
-      console.log(`Starting structured search: ${searchQuery} in ${location || 'San Francisco'}`);
+      // Log the location explicitly to debug
+      console.log(`Search location received in hook: "${location || 'undefined'}"`);
       
       // Perform the structured search
       const response = await clientRef.current.searchWithStructuredOutput(searchQuery, { 

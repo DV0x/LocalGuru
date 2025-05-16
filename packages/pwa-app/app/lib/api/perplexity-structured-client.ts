@@ -128,23 +128,34 @@ export class PerplexityStructuredClient {
       // Extract location from options
       const location = options.location || 'San Francisco';
       
+      // Add detailed logging for debugging
+      console.log('Perplexity API options received:', JSON.stringify(options));
+      console.log(`Location value being used for search: "${location}"`);
+      
       console.log(`Making structured search request to Perplexity API for: "${query}" in ${location}`);
       
       // Create system prompt with location context and request for more results
-      const systemPrompt = `You are LocalGuru, an expert on ${location}. 
-        Provide detailed local recommendations with specific business names, addresses, and descriptions.
+      const systemPrompt = `You are LocalGuru, a local recommendations expert who specializes in providing detailed information about ${location}. 
+        You have extensive knowledge about various cities and regions around the world.
+        For this query about ${location}, provide detailed local recommendations with specific business names, addresses, and descriptions.
         Include as much detail as possible about each location, including opening hours, price range, and what makes it special.
         Always include at least 8-10 relevant locations whenever possible, even if some have less detailed information.
         If exact information like prices or hours isn't available, provide your best estimate based on similar establishments.
         For addresses, provide full street addresses whenever possible.
-        Focus on authentic local knowledge and provide accurate information.`;
+        Focus on authentic local knowledge and provide accurate information.
+        Use the latest available information for the specific location requested.
+        If you don't have enough information about the requested location, provide the best information available but don't make up fictional places.`;
       
-      // Define trusted domains for better search results
+      // Define trusted domains for better search results - expand this list for different regions
       const searchDomainFilter = [
         "reddit.com",
         "yelp.com", 
         "tripadvisor.com"
+        // API limit: Only 3 domains maximum are allowed for search_domain_filter
       ];
+      
+      // Create a location specific search query to help the API find relevant results
+      const augmentedQuery = `${query} in ${location}`;
       
       // Prepare request for Perplexity API with structured output format
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -162,7 +173,7 @@ export class PerplexityStructuredClient {
             },
             {
               role: "user",
-              content: query
+              content: augmentedQuery // Use the location-augmented query
             }
           ],
           temperature: 0.2,
