@@ -123,6 +123,11 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
     latitude: number;
     name: string;
     address?: string;
+    category?: string;
+    price_range?: string;
+    hours?: string;
+    description?: string;
+    highlights?: string;
     source?: string;
   } | null>(null);
 
@@ -143,34 +148,49 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const countVisibleMarkers = useCallback(() => {
     if (!mapRef.current) return;
     
-    // Get the map's bounds as the area to query
-    const bounds = mapRef.current.getBounds();
-    if (!bounds) return;
-    
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    if (!sw || !ne) return;
-    
-    const boundingBox: [PointLike, PointLike] = [
-      [sw.lng, sw.lat],
-      [ne.lng, ne.lat]
-    ];
-    
-    const unclustered = mapRef.current.queryRenderedFeatures(boundingBox, {
-      layers: ['unclustered-point']
-    });
-    
-    const clusters = mapRef.current.queryRenderedFeatures(boundingBox, {
-      layers: ['clusters']
-    });
-    
-    console.log(`Visible markers: ${unclustered.length} unclustered points, ${clusters.length} clusters`);
-    
-    // Log coordinates of unclustered points for debugging
-    unclustered.forEach((feature, i) => {
-      const coords = (feature.geometry as any).coordinates;
-      console.log(`Unclustered point ${i}: [${coords[0]}, ${coords[1]}]`);
-    });
+    try {
+      // Check if the layers exist in the map before querying
+      const map = mapRef.current.getMap();
+      const hasUnclusteredLayer = map.getLayer('unclustered-point');
+      const hasClusterLayer = map.getLayer('clusters');
+      
+      // Skip if the layers don't exist yet
+      if (!hasUnclusteredLayer || !hasClusterLayer) {
+        console.log('Skipping marker count - layers not yet added to map');
+        return;
+      }
+      
+      // Get the map's bounds as the area to query
+      const bounds = mapRef.current.getBounds();
+      if (!bounds) return;
+      
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      if (!sw || !ne) return;
+      
+      const boundingBox: [PointLike, PointLike] = [
+        [sw.lng, sw.lat],
+        [ne.lng, ne.lat]
+      ];
+      
+      const unclustered = mapRef.current.queryRenderedFeatures(boundingBox, {
+        layers: ['unclustered-point']
+      });
+      
+      const clusters = mapRef.current.queryRenderedFeatures(boundingBox, {
+        layers: ['clusters']
+      });
+      
+      console.log(`Visible markers: ${unclustered.length} unclustered points, ${clusters.length} clusters`);
+      
+      // Log coordinates of unclustered points for debugging
+      unclustered.forEach((feature, i) => {
+        const coords = (feature.geometry as any).coordinates;
+        console.log(`Unclustered point ${i}: [${coords[0]}, ${coords[1]}]`);
+      });
+    } catch (error) {
+      console.error('Error counting markers:', error);
+    }
   }, [mapRef]);
 
   // Use effect to count markers when view state changes
@@ -188,56 +208,83 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
   }, []);
 
   const onClick = useCallback((event: MapLayerMouseEvent) => {
-    // Check if the click is on a cluster
-    const clusterFeatures = mapRef.current?.queryRenderedFeatures(event.point, {
-      layers: ['clusters']
-    }) as MapboxGeoJSONFeature[] | undefined;
+    if (!mapRef.current) return;
     
-    if (clusterFeatures && clusterFeatures.length > 0) {
-      // Get the cluster id from the feature
-      const clusterId = clusterFeatures[0].properties?.cluster_id;
+    try {
+      // Check if the layers exist in the map before querying
+      const map = mapRef.current.getMap();
+      const hasUnclusteredLayer = map.getLayer('unclustered-point');
+      const hasClusterLayer = map.getLayer('clusters');
       
-      // Get the mapbox instance
-      const mapboxSource = mapRef.current?.getMap().getSource('search-results') as any;
-      
-      // Get cluster expansion zoom
-      mapboxSource.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
-        if (err) return;
-        
-        // Fly to the cluster
-        mapRef.current?.flyTo({
-          center: (clusterFeatures[0].geometry as Point).coordinates as [number, number],
-          zoom: zoom + 0.5, // Zoom in a bit more to better see the points
-          duration: 500
-        });
-      });
-      
-      return;
-    }
-    
-    // Get features at click point (for unclustered points)
-    const features = mapRef.current?.queryRenderedFeatures(event.point, {
-      layers: ['unclustered-point']
-    }) as MapboxGeoJSONFeature[] | undefined;
-    
-    if (features && features.length > 0) {
-      const feature = features[0];
-      setSelectedFeatureId(feature.id as string);
-      
-      // Show popup for the selected feature
-      if (feature.geometry.type === 'Point') {
-        const coordinates = feature.geometry.coordinates;
-        setPopupInfo({
-          longitude: coordinates[0],
-          latitude: coordinates[1],
-          name: feature.properties?.name || 'Unknown location',
-          address: feature.properties?.address,
-          source: feature.properties?.source
-        });
+      // Skip if layers don't exist yet
+      if (!hasUnclusteredLayer && !hasClusterLayer) {
+        return;
       }
-    } else {
-      // Clicked outside a feature
-      setPopupInfo(null);
+      
+      // Check if the click is on a cluster (only if cluster layer exists)
+      if (hasClusterLayer) {
+        const clusterFeatures = mapRef.current.queryRenderedFeatures(event.point, {
+          layers: ['clusters']
+        }) as MapboxGeoJSONFeature[] | undefined;
+        
+        if (clusterFeatures && clusterFeatures.length > 0) {
+          // Get the cluster id from the feature
+          const clusterId = clusterFeatures[0].properties?.cluster_id;
+          
+          // Get the mapbox instance
+          const mapboxSource = mapRef.current.getMap().getSource('search-results') as any;
+          
+          // Get cluster expansion zoom
+          mapboxSource.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
+            if (err) return;
+            
+            // Fly to the cluster
+            mapRef.current?.flyTo({
+              center: (clusterFeatures[0].geometry as Point).coordinates as [number, number],
+              zoom: zoom + 0.5, // Zoom in a bit more to better see the points
+              duration: 500
+            });
+          });
+          
+          return;
+        }
+      }
+      
+      // Get features at click point (for unclustered points)
+      if (hasUnclusteredLayer) {
+        const features = mapRef.current.queryRenderedFeatures(event.point, {
+          layers: ['unclustered-point']
+        }) as MapboxGeoJSONFeature[] | undefined;
+        
+        if (features && features.length > 0) {
+          const feature = features[0];
+          setSelectedFeatureId(feature.id as string);
+          
+          // Show popup for the selected feature
+          if (feature.geometry.type === 'Point') {
+            const coordinates = feature.geometry.coordinates;
+            const props = feature.properties || {};
+            
+            setPopupInfo({
+              longitude: coordinates[0],
+              latitude: coordinates[1],
+              name: props.name || 'Unknown location',
+              address: props.address,
+              category: props.category,
+              price_range: props.price_range,
+              hours: props.hours,
+              description: props.description,
+              highlights: props.highlights,
+              source: props.source
+            });
+          }
+        } else {
+          // Clicked outside a feature
+          setPopupInfo(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling map click:', error);
     }
   }, [mapRef, setSelectedFeatureId]);
 
@@ -287,17 +334,72 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
             closeButton={true}
             closeOnClick={false}
             className="map-popup"
+            maxWidth="300px"
           >
-            <div className="p-2 max-w-[250px]">
+            <div className="p-2 max-w-[300px]">
               <h3 className="text-sm font-semibold mb-1">{popupInfo.name}</h3>
-              {popupInfo.address && (
-                <p className="text-xs text-gray-600 mb-1 line-clamp-2">{popupInfo.address}</p>
+              
+              {/* Category and price range */}
+              {(popupInfo.category || popupInfo.price_range) && (
+                <div className="flex gap-2 mt-1 mb-1.5">
+                  {popupInfo.category && (
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      {popupInfo.category}
+                    </span>
+                  )}
+                  {popupInfo.price_range && (
+                    <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full">
+                      {popupInfo.price_range}
+                    </span>
+                  )}
+                </div>
               )}
-              {popupInfo.source && (
-                <p className="text-xs text-gray-500 italic mt-1 overflow-hidden text-ellipsis line-clamp-1">
-                  From: {popupInfo.source}
+              
+              {/* Address */}
+              {popupInfo.address && (
+                <p className="text-xs text-gray-600 mb-1.5 line-clamp-2">{popupInfo.address}</p>
+              )}
+              
+              {/* Hours */}
+              {popupInfo.hours && (
+                <p className="text-xs text-gray-600 mb-1.5">
+                  <span className="font-medium">Hours:</span> {popupInfo.hours}
                 </p>
               )}
+              
+              {/* Description - truncated */}
+              {popupInfo.description && (
+                <p className="text-xs text-gray-700 mb-1.5 line-clamp-3">{popupInfo.description}</p>
+              )}
+              
+              {/* Highlights */}
+              {popupInfo.highlights && (
+                <div className="mb-1.5">
+                  <div className="text-xs font-medium text-gray-700 mb-0.5">Highlights:</div>
+                  <p className="text-xs text-gray-600">{popupInfo.highlights}</p>
+                </div>
+              )}
+              
+              {/* Source with link */}
+              {popupInfo.source && (
+                <div className="text-xs text-gray-500 mt-1.5 overflow-hidden text-ellipsis">
+                  <span className="italic">Source: </span>
+                  {popupInfo.source.startsWith('http') ? (
+                    <a 
+                      href={popupInfo.source} 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {new URL(popupInfo.source).hostname}
+                    </a>
+                  ) : (
+                    <span>{popupInfo.source}</span>
+                  )}
+                </div>
+              )}
+              
+              {/* Coordinates */}
               <div className="mt-2 text-xs text-gray-400 flex items-center">
                 <span className="inline-block w-2 h-2 rounded-full bg-purple-600 mr-1"></span>
                 {`${popupInfo.longitude.toFixed(5)}, ${popupInfo.latitude.toFixed(5)}`}

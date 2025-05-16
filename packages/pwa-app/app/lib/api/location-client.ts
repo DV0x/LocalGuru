@@ -10,6 +10,12 @@ export interface LocationData {
   confidence: number;
   source_text: string;
   created_at: string;
+  // Optional properties for enhanced location data
+  price_level?: string | number;
+  rating?: number;
+  category?: string;
+  hours?: string;
+  highlights?: string[];
 }
 
 export class LocationClient {

@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import { LocationData } from '../api/location-client';
+import { PerplexityLocationData } from '../api/perplexity-structured-client';
 
 export interface GeoLocationData {
   id: string;
@@ -137,4 +138,89 @@ export async function extractLocationsFromSearchResults(searchResults: any[]): P
     console.error('Error extracting locations:', error);
     return [];
   }
+}
+
+/**
+ * Convert Perplexity location data to GeoJSON features
+ * @param locations Array of Perplexity location objects
+ * @returns Array of GeoJSON Feature objects
+ */
+export function perplexityLocationsToFeatures(locations: PerplexityLocationData[]): Feature<Point>[] {
+  if (!locations || locations.length === 0) {
+    console.warn('No Perplexity locations to convert to GeoJSON features');
+    return [];
+  }
+  
+  console.log(`Converting ${locations.length} Perplexity locations to GeoJSON features`);
+  
+  // Keep track of used coordinates to prevent exact overlaps
+  const usedCoordinates = new Map<string, number>();
+  
+  const features: Feature<Point>[] = [];
+  
+  locations.forEach((location, index) => {
+    // Skip locations without coordinates
+    if (!location.coordinates?.latitude || !location.coordinates?.longitude) {
+      console.warn(`Location ${location.name} has no coordinates, skipping`);
+      return;
+    }
+    
+    // Use location coordinates
+    let lat = location.coordinates.latitude;
+    let lon = location.coordinates.longitude;
+    
+    // Log the coordinates for debugging
+    console.log(`Location: ${location.name}, Coordinates: [${lon}, ${lat}]`);
+    
+    // Create a coordinate key for checking duplicates (rounded to 5 decimal places)
+    const roundedLon = Math.round(lon * 100000) / 100000;
+    const roundedLat = Math.round(lat * 100000) / 100000;
+    const coordKey = `${roundedLon},${roundedLat}`;
+    
+    // Apply small offset to prevent exact overlaps
+    if (usedCoordinates.has(coordKey)) {
+      const count = usedCoordinates.get(coordKey)! + 1;
+      usedCoordinates.set(coordKey, count);
+      
+      // Add small offset in a spiral pattern
+      const angle = count * (Math.PI / 4); // 45 degree increments
+      const radius = 0.0003 * count; // About 30 meters per step
+      
+      lon += radius * Math.cos(angle);
+      lat += radius * Math.sin(angle);
+      
+      console.log(`Applied offset to duplicate Perplexity location: ${location.name}`);
+    } else {
+      usedCoordinates.set(coordKey, 1);
+    }
+    
+    // Create feature with proper typing
+    const feature: Feature<Point> = {
+      type: 'Feature',
+      id: `perplexity-${index}`,
+      geometry: {
+        type: 'Point',
+        coordinates: [lon, lat]
+      },
+      properties: {
+        // Include all properties but avoid duplicates
+        name: location.name,
+        address: location.address,
+        category: location.category,
+        price_range: location.price_range,
+        hours: location.hours,
+        description: location.description,
+        highlights: location.highlights?.join(', '),
+        source: location.source,
+        // Include any other custom properties
+        is_perplexity: true
+      }
+    };
+    
+    features.push(feature);
+  });
+  
+  console.log(`Created ${features.length} GeoJSON features from Perplexity data`);
+  
+  return features;
 }

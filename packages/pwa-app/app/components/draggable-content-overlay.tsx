@@ -12,6 +12,7 @@ interface DraggableContentOverlayProps {
   isLoading: boolean;
   error: string | null;
   status: SearchStatus;
+  children?: React.ReactNode;
 }
 
 // Define the ref interface
@@ -24,7 +25,8 @@ export const DraggableContentOverlay = forwardRef<DraggableContentOverlayRef, Dr
   results,
   isLoading,
   error,
-  status
+  status,
+  children
 }, ref) => {
   const [position, setPosition] = useState<"collapsed" | "partial" | "expanded">("partial");
   const [lastActivePosition, setLastActivePosition] = useState<"partial" | "expanded">("partial");
@@ -601,6 +603,9 @@ export const DraggableContentOverlay = forwardRef<DraggableContentOverlayRef, Dr
                 <p key={i} className="mb-4 text-card-foreground">{paragraph}</p>
               ) : <br key={i} />
             ))}
+            
+            {/* Render children after content */}
+            {children}
             
             {/* Add extra space at the bottom for comfortable scrolling */}
             <div className="h-16"></div>
