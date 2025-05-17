@@ -1,89 +1,150 @@
 import { NextResponse } from 'next/server';
 
-// Cache for 1 day
-const CACHE_TTL = 24 * 60 * 60 * 1000;
-const cache = new Map<string, { data: any, timestamp: number }>();
+// Simple in-memory cache with a 24-hour expiration
+const geocodeCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   try {
-    // Get query parameter
-    const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q');
+    const { location, address } = await request.json();
     
-    if (!query) {
+    // Validate input
+    const locationText = location || address;
+    if (!locationText) {
       return NextResponse.json(
-        { error: 'Missing query parameter' },
+        { error: 'Missing location or address parameter' },
         { status: 400 }
       );
     }
     
     // Check cache
-    if (cache.has(query) && (Date.now() - cache.get(query)!.timestamp) < CACHE_TTL) {
-      return NextResponse.json(cache.get(query)!.data);
+    const cacheKey = locationText.toLowerCase().trim();
+    const cachedData = geocodeCache.get(cacheKey);
+    
+    if (cachedData && (Date.now() - cachedData.timestamp) < CACHE_TTL) {
+      console.log(`Using cached geocode for: ${locationText}`);
+      return NextResponse.json(cachedData.data);
     }
     
-    // Get MAPBOX API key
-    const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_API_KEY;
-    
-    if (!MAPBOX_TOKEN) {
-      console.warn('No Mapbox token found, returning dummy data');
-      
-      // Return dummy data for San Francisco
-      const dummyData = {
-        longitude: -122.4194,
-        latitude: 37.7749,
-        address: `${query} (Dummy address - no Mapbox token)`
-      };
-      
-      cache.set(query, { data: dummyData, timestamp: Date.now() });
-      return NextResponse.json(dummyData);
+    // Call Mapbox Geocoding API
+    const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!mapboxToken) {
+      throw new Error('Mapbox token not configured');
     }
     
-    // Call Mapbox API
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=1`;
+    console.log(`Geocoding location: ${locationText}`);
+    
+    const encodedLocation = encodeURIComponent(locationText);
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedLocation}.json?access_token=${mapboxToken}&limit=1`;
     
     const response = await fetch(url);
     
     if (!response.ok) {
-      throw new Error(`Mapbox API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`Geocoding error (${response.status}):`, errorText);
+      throw new Error(`Geocoding API error: ${response.status}`);
     }
     
     const data = await response.json();
     
+    // Process the result
+    const result: {
+      query: string;
+      coordinates: { longitude: number; latitude: number } | null;
+      address: string | null;
+      place_name: string | null;
+    } = {
+      query: locationText,
+      coordinates: null,
+      address: null,
+      place_name: null
+    };
+    
     if (data.features && data.features.length > 0) {
       const feature = data.features[0];
       
-      // Add a very small random jitter to help visualize pins in the same location
-      // This is a small offset (max ~5 meters) that helps pins not stack exactly
-      const jitterAmount = 0.00005; // ~5 meters
-      const longitudeJitter = (Math.random() - 0.5) * jitterAmount;
-      const latitudeJitter = (Math.random() - 0.5) * jitterAmount;
-      
-      const result = {
-        longitude: feature.center[0] + longitudeJitter,
-        latitude: feature.center[1] + latitudeJitter,
-        address: feature.place_name,
-        originalCoords: {
-          longitude: feature.center[0],
-          latitude: feature.center[1]
-        }
+      result.coordinates = {
+        longitude: feature.center[0],
+        latitude: feature.center[1]
       };
       
-      // Cache the result
-      cache.set(query, { data: result, timestamp: Date.now() });
+      result.place_name = feature.place_name;
       
-      return NextResponse.json(result);
+      // Attempt to extract a formatted address
+      const addressComponents = {
+        street: feature.text || '',
+        city: '',
+        state: '',
+        country: ''
+      };
+      
+      // Parse context for additional address info
+      if (feature.context) {
+        feature.context.forEach((ctx: any) => {
+          if (ctx.id.startsWith('place')) {
+            addressComponents.city = ctx.text;
+          } else if (ctx.id.startsWith('region')) {
+            addressComponents.state = ctx.text;
+          } else if (ctx.id.startsWith('country')) {
+            addressComponents.country = ctx.text;
+          }
+        });
+      }
+      
+      // Format address string
+      const addressParts = [];
+      if (addressComponents.street) addressParts.push(addressComponents.street);
+      if (addressComponents.city) addressParts.push(addressComponents.city);
+      if (addressComponents.state) addressParts.push(addressComponents.state);
+      if (addressComponents.country) addressParts.push(addressComponents.country);
+      
+      result.address = addressParts.join(', ');
     }
     
-    return NextResponse.json(
-      { error: 'No locations found' },
-      { status: 404 }
-    );
+    // Cache the result
+    geocodeCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+    
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('Geocoding error:', error);
+    console.error('Geocoding API error:', error);
     
     return NextResponse.json(
-      { error: 'Geocoding failed' },
+      { error: 'Failed to geocode location', details: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}
+
+// For testing via GET
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const location = searchParams.get('location');
+  
+  if (!location) {
+    return NextResponse.json(
+      { error: 'Missing location parameter' },
+      { status: 400 }
+    );
+  }
+  
+  try {
+    const mockRequest = new Request('http://localhost', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ location })
+    });
+    
+    return await POST(mockRequest);
+  } catch (error) {
+    console.error('GET geocode error:', error);
+    
+    return NextResponse.json(
+      { error: 'Failed to process geocode request' },
       { status: 500 }
     );
   }

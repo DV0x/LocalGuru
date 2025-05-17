@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { PerplexityStructuredClient, PerplexityStructuredResponse } from '../lib/api/perplexity-structured-client';
+import { FarcasterClient } from '../lib/api/farcaster-client';
 import { SearchStatus, SearchResult } from '../lib/types/search';
 import { LocationData } from '../lib/api/location-client';
 import { useMapContext } from '../contexts/map-context';
+import { useAuth } from '../contexts/auth-context';
 import { locationsToFeatures, perplexityLocationsToFeatures } from '../lib/utils/geojson-utils';
 
 export function useStructuredSearch() {
@@ -17,12 +19,18 @@ export function useStructuredSearch() {
   const [structuredResponse, setStructuredResponse] = useState<PerplexityStructuredResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
-  const clientRef = useRef(new PerplexityStructuredClient());
+  const [farcasterResults, setFarcasterResults] = useState<any[]>([]);
+  const [farcasterLocations, setFarcasterLocations] = useState<LocationData[]>([]);
+  const [isFarcasterLoading, setIsFarcasterLoading] = useState(false);
+  const [activeResultsTab, setActiveResultsTab] = useState<'structured' | 'social'>('structured');
   
-  // Get map context for updating features
+  const perplexityClientRef = useRef(new PerplexityStructuredClient());
+  const farcasterClientRef = useRef(new FarcasterClient());
+  
+  const { user } = useAuth();
+  
   const mapContext = useMapContext();
   
-  // Function to generate search results from sources
   const createSearchResultsFromSources = (sources: any[]) => {
     return sources.map((source, index) => ({
       id: `source-${index}`,
@@ -33,10 +41,8 @@ export function useStructuredSearch() {
     }));
   };
   
-  // Process structured response and update map
   const processStructuredResponse = (response: PerplexityStructuredResponse) => {
     try {
-      // Validate the response
       if (!response) {
         console.error('Empty Perplexity response received');
         setError('Empty response received');
@@ -45,49 +51,41 @@ export function useStructuredSearch() {
       
       console.log('Processing Perplexity structured response:', response);
       
-      // Store the full structured response
       setStructuredResponse(response);
       
-      // Set the summary as content
       setContent(response.summary);
       
-      // Convert locations to our app's format
-      const locationData = clientRef.current.convertToLocationData(response);
+      const locationData = perplexityClientRef.current.convertToLocationData(response);
       setLocations(locationData);
       
-      // Update map with locations directly from Perplexity data
-      // Use our new utility function to convert directly to GeoJSON features
       if (response.locations && response.locations.length > 0) {
         console.log(`Processing ${response.locations.length} Perplexity locations`);
         
-        // Log some sample location data to verify structure
         if (response.locations[0]) {
           console.log('Sample location with coordinates:', response.locations[0]);
         }
         
-        // Direct conversion from Perplexity locations to GeoJSON features
-        const features = perplexityLocationsToFeatures(response.locations);
-        
-        if (features.length > 0) {
-          console.log(`Created ${features.length} map features from Perplexity data`);
+        if (activeResultsTab === 'structured') {
+          const features = perplexityLocationsToFeatures(response.locations);
           
-          // Update map context with the new features
-          mapContext.setSearchResultFeatures(features);
-          
-          // Fit map to show all locations
-          setTimeout(() => {
-            mapContext.fitBoundsToFeatures();
-          }, 500);
-        } else {
-          console.warn('No valid features could be created from Perplexity locations');
-          setError('Could not extract location information from the response');
+          if (features.length > 0) {
+            console.log(`Created ${features.length} map features from Perplexity data`);
+            
+            mapContext.setSearchResultFeatures(features);
+            
+            setTimeout(() => {
+              mapContext.fitBoundsToFeatures();
+            }, 500);
+          } else {
+            console.warn('No valid features could be created from Perplexity locations');
+            setError('Could not extract location information from the response');
+          }
         }
       } else {
         console.warn('No locations found in Perplexity response');
         setError('No locations found in the search results');
       }
       
-      // Create search results from sources
       if (response.sources && response.sources.length > 0) {
         const searchResults = createSearchResultsFromSources(response.sources);
         setResults(searchResults);
@@ -98,9 +96,7 @@ export function useStructuredSearch() {
     }
   };
   
-  // For locations that need geocoding
   const geocodeLocationsIfNeeded = async (response: PerplexityStructuredResponse) => {
-    // Look for locations that need geocoding
     const locationsNeedingGeocoding = response.locations.filter(
       loc => !loc.coordinates || !loc.coordinates.latitude || !loc.coordinates.longitude
     );
@@ -108,15 +104,68 @@ export function useStructuredSearch() {
     if (locationsNeedingGeocoding.length > 0) {
       console.log(`${locationsNeedingGeocoding.length} locations need geocoding`);
       
-      // We could implement geocoding here, but for now we'll just log
-      // In a real implementation, we would call our geocoding API
+      for (const location of locationsNeedingGeocoding) {
+        try {
+          const response = await fetch('/api/geocode', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              location: `${location.name}, ${location.address}` 
+            }),
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.coordinates) {
+              location.coordinates = {
+                latitude: data.coordinates.latitude,
+                longitude: data.coordinates.longitude
+              };
+              console.log(`Geocoded ${location.name} to`, location.coordinates);
+            }
+          }
+        } catch (error) {
+          console.error(`Error geocoding ${location.name}:`, error);
+        }
+      }
     }
   };
   
-  // Main search function
+  const processFarcasterLocations = async (casts: any[]) => {
+    try {
+      if (!casts || casts.length === 0) {
+        console.warn('No Farcaster casts to process');
+        return;
+      }
+      
+      console.log(`Processing ${casts.length} Farcaster casts`);
+      
+      const extractedLocations = await farcasterClientRef.current.extractLocationsFromCasts(casts);
+      
+      setFarcasterLocations(extractedLocations);
+      
+      if (activeResultsTab === 'social' && extractedLocations.length > 0) {
+        const features = locationsToFeatures(extractedLocations);
+        
+        if (features.length > 0) {
+          console.log(`Created ${features.length} map features from Farcaster data`);
+          
+          mapContext.setSearchResultFeatures(features);
+          
+          setTimeout(() => {
+            mapContext.fitBoundsToFeatures();
+          }, 500);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing Farcaster locations:', error);
+    }
+  };
+  
   const search = async (searchQuery: string, location?: string) => {
     try {
-      // Reset state
       setQuery(searchQuery);
       setStatus('searching');
       setResults([]);
@@ -126,24 +175,18 @@ export function useStructuredSearch() {
       setStructuredResponse(null);
       setIsLoading(true);
       
-      // Clear map features
       mapContext.setSearchResultFeatures([]);
       
-      // Log the location explicitly to debug
       console.log(`Search location received in hook: "${location || 'undefined'}"`);
       
-      // Perform the structured search
-      const response = await clientRef.current.searchWithStructuredOutput(searchQuery, { 
+      const response = await perplexityClientRef.current.searchWithStructuredOutput(searchQuery, { 
         location: location || 'San Francisco'
       });
       
-      // Process the response
       processStructuredResponse(response);
       
-      // Try to geocode any locations without coordinates
       await geocodeLocationsIfNeeded(response);
       
-      // Update status
       setStatus('complete');
       
     } catch (err) {
@@ -155,6 +198,93 @@ export function useStructuredSearch() {
     }
   };
   
+  const enhancedSearch = async (searchQuery: string, location?: string) => {
+    try {
+      setQuery(searchQuery);
+      setStatus('searching');
+      setResults([]);
+      setContent('');
+      setLocations([]);
+      setFarcasterResults([]);
+      setFarcasterLocations([]);
+      setError(null);
+      setStructuredResponse(null);
+      setIsLoading(true);
+      setIsFarcasterLoading(true);
+      
+      mapContext.setSearchResultFeatures([]);
+      
+      const locationToUse = location || 'San Francisco';
+      
+      console.log(`Enhanced search for "${searchQuery}" in location: "${locationToUse}"`);
+      
+      const perplexityPromise = perplexityClientRef.current.searchWithStructuredOutput(
+        searchQuery,
+        { location: locationToUse }
+      );
+      
+      const farcasterPromise = farcasterClientRef.current.combinedLocationSearch(
+        searchQuery,
+        locationToUse,
+        {
+          timeframe: '3m',
+          limit: 10,
+          viewerFid: user?.fid
+        }
+      );
+      
+      const [perplexityResponse, farcasterResponse] = await Promise.all([
+        perplexityPromise.catch(error => {
+          console.error('Perplexity search error:', error);
+          return null;
+        }),
+        farcasterPromise.catch(error => {
+          console.error('Farcaster search error:', error);
+          return { casts: [] };
+        })
+      ]);
+      
+      if (perplexityResponse) {
+        processStructuredResponse(perplexityResponse);
+        
+        await geocodeLocationsIfNeeded(perplexityResponse);
+      } else {
+        setError('Failed to get structured search results');
+      }
+      
+      setFarcasterResults(farcasterResponse.casts);
+      
+      if (farcasterResponse.casts && farcasterResponse.casts.length > 0) {
+        await processFarcasterLocations(farcasterResponse.casts);
+      }
+      
+      setStatus('complete');
+    } catch (error) {
+      console.error('Enhanced search error:', error);
+      setStatus('error');
+      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+    } finally {
+      setIsLoading(false);
+      setIsFarcasterLoading(false);
+    }
+  };
+  
+  const toggleResultsTab = (tab: 'structured' | 'social') => {
+    setActiveResultsTab(tab);
+    
+    if (tab === 'structured' && structuredResponse) {
+      const features = perplexityLocationsToFeatures(structuredResponse.locations);
+      mapContext.setSearchResultFeatures(features);
+    } else if (tab === 'social' && farcasterLocations.length > 0) {
+      const features = locationsToFeatures(farcasterLocations);
+      mapContext.setSearchResultFeatures(features);
+    }
+    
+    setTimeout(() => {
+      mapContext.fitBoundsToFeatures();
+    }, 500);
+  };
+  
   return {
     query,
     status,
@@ -164,6 +294,12 @@ export function useStructuredSearch() {
     locations,
     structuredResponse,
     search,
-    isLoading
+    isLoading,
+    farcasterResults,
+    farcasterLocations,
+    isFarcasterLoading,
+    enhancedSearch,
+    activeResultsTab,
+    toggleResultsTab
   };
 } 

@@ -136,6 +136,88 @@ To learn more about the technologies used:
 - [Supabase Documentation](https://supabase.io/docs)
 - [OpenAI Documentation](https://platform.openai.com/docs)
 
+# LocalGuru: Location-based Social Recommendations
+
+## Overview
+
+LocalGuru is a hybrid location search application that combines authoritative structured data with social recommendations from Farcaster. The platform helps users discover places by leveraging both official listings and real community feedback.
+
+## Features
+
+- **Dual-source Search**: Get results from both structured data and social media in one interface
+- **Interactive Map**: Visualize all locations with an interactive map interface
+- **Social Recommendations**: See what real people are saying about locations on Farcaster
+- **Toggle Between Sources**: Easily switch between official and social recommendations
+- **Location Details**: View comprehensive information about each location
+
+## Farcaster Social Integration
+
+The new social search feature integrates with Farcaster's API (via Neynar) to:
+
+1. **Extract Social Recommendations**: Find relevant mentions of locations from Farcaster posts
+2. **Highlight Popular Places**: Surface trending locations based on engagement
+3. **Show Community Sentiment**: Display real user opinions from social media
+
+## Technical Implementation
+
+### Core Components
+
+- **FarcasterClient**: A robust client for the Neynar API that handles search, trending, and power user queries
+- **Location Extraction**: Intelligent extraction of location entities from social posts
+- **Structured Search Hook**: React hook that manages both structured and social search results
+- **UI Components**: Specialized components for displaying social recommendations
+
+### Search Strategy
+
+The implementation uses a multi-strategy approach to ensure reliable results:
+- Tries multiple search queries with fallbacks
+- Uses hybrid search mode combining literal and semantic matching
+- Falls back to global feed when specific searches yield no results
+- Implements client-side filtering for more relevant location matching
+
+## Demo Instructions
+
+1. Enter a search query (e.g., "best restaurants" or "coffee shops")
+2. Specify a location (e.g., "New York" or "San Francisco")
+3. Toggle between the "Official" and "Social" tabs to see different result types
+4. Click on markers or result cards to see details
+5. Explore the interactive map to discover nearby locations
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm/pnpm
+- Neynar API key for Farcaster integration
+- Mapbox token for map functionality
+
+### Environment Setup
+
+Create a `.env.local` file with:
+
+```
+NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token
+NEXT_PUBLIC_NEYNAR_API_KEY=your_neynar_api_key
+```
+
+### Installation
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run development server
+pnpm dev
+```
+
+### Access the Demo
+
+Open [http://localhost:3000/structured-demo](http://localhost:3000/structured-demo) to view the demo.
+
+## Hackathon Implementation
+
+This project was developed as part of the hackathon to demonstrate how social data can enhance location-based search experiences, combining the authority of structured data with the authenticity of community recommendations.
+
 # LocalGuru Enhanced Intent Detection System
 
 ## Overview

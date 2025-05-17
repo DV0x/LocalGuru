@@ -5,6 +5,9 @@ import { motion, PanInfo, useMotionValue, useSpring, useTransform, useDragContro
 import { SearchResult, SearchStatus } from "../lib/types/search";
 import { ChevronUp, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "../lib/utils";
+import { LocationData } from "../lib/api/location-client";
+import { PerplexityStructuredResponse } from "../lib/api/perplexity-structured-client";
+import { ResultsToggle } from "./results-toggle";
 
 interface DraggableContentOverlayProps {
   content: string;
@@ -13,6 +16,10 @@ interface DraggableContentOverlayProps {
   error: string | null;
   status: SearchStatus;
   children?: React.ReactNode;
+  structuredResponse?: PerplexityStructuredResponse | null;
+  farcasterLocations?: LocationData[];
+  activeResultsTab?: 'structured' | 'social';
+  onToggleTab?: (tab: 'structured' | 'social') => void;
 }
 
 // Define the ref interface
@@ -26,7 +33,11 @@ export const DraggableContentOverlay = forwardRef<DraggableContentOverlayRef, Dr
   isLoading,
   error,
   status,
-  children
+  children,
+  structuredResponse,
+  farcasterLocations = [],
+  activeResultsTab = 'structured',
+  onToggleTab
 }, ref) => {
   const [position, setPosition] = useState<"collapsed" | "partial" | "expanded">("partial");
   const [lastActivePosition, setLastActivePosition] = useState<"partial" | "expanded">("partial");
@@ -44,6 +55,10 @@ export const DraggableContentOverlay = forwardRef<DraggableContentOverlayRef, Dr
     timestamp: Date.now(),
     source: "initial"
   });
+  
+  // Calculate counts for the toggle
+  const structuredCount = structuredResponse?.locations?.length || 0;
+  const socialCount = farcasterLocations?.length || 0;
   
   // Track position changes for debugging
   const trackPositionChange = (newPosition: "collapsed" | "partial" | "expanded", source: string) => {
@@ -596,33 +611,31 @@ export const DraggableContentOverlay = forwardRef<DraggableContentOverlayRef, Dr
           <div className="rounded-lg bg-destructive/20 p-4 text-center text-destructive">
             <p>{error || 'An error occurred while searching. Please try again.'}</p>
           </div>
-        ) : content ? (
-          <div className="prose prose-sm max-w-none">
-            {content.split('\n').map((paragraph, i) => (
-              paragraph.trim() ? (
-                <p key={i} className="mb-4 text-card-foreground">{paragraph}</p>
-              ) : <br key={i} />
-            ))}
+        ) : position !== "collapsed" && !isLoading && !error && (
+          <>
+            {/* Results toggle (only show when we have both types of results) */}
+            {structuredCount > 0 && socialCount > 0 && onToggleTab && (
+              <ResultsToggle 
+                activeTab={activeResultsTab}
+                onToggle={onToggleTab}
+                structuredCount={structuredCount}
+                socialCount={socialCount}
+              />
+            )}
             
-            {/* Render children after content */}
+            {content && (
+              <div className="prose prose-sm max-w-none mb-4">
+                {content.split('\n').map((paragraph, i) => (
+                  paragraph.trim() ? (
+                    <p key={i} className="mb-4 text-card-foreground">{paragraph}</p>
+                  ) : <br key={i} />
+                ))}
+              </div>
+            )}
+            
+            {/* Children (for rendering location cards) */}
             {children}
-            
-            {/* Add extra space at the bottom for comfortable scrolling */}
-            <div className="h-16"></div>
-          </div>
-        ) : (stabilizedStatus === 'idle' && status === 'idle') ? (
-          <div className="text-center text-muted-foreground p-4">
-            <p>Enter a search query to see results</p>
-          </div>
-        ) : (status === 'complete' && !content) ? (
-          <div className="text-center text-muted-foreground p-4">
-            <p>No results available</p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center p-6 text-center">
-            <div className="h-10 w-10 border-4 border-primary/70 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-muted-foreground">Processing results...</p>
-          </div>
+          </>
         )}
       </div>
       

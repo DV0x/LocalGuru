@@ -16,6 +16,18 @@ export interface LocationData {
   category?: string;
   hours?: string;
   highlights?: string[];
+  // Metadata for additional information
+  metadata?: {
+    authorName?: string;
+    authorUsername?: string;
+    authorPfp?: string;
+    authorFid?: number;
+    timestamp?: string;
+    isPowerUser?: boolean;
+    isTrending?: boolean;
+    engagement?: number;
+    [key: string]: any;
+  };
 }
 
 export class LocationClient {

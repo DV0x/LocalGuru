@@ -1,91 +1,135 @@
 import { NextResponse } from 'next/server';
-import { OpenAI } from 'openai';
+import { supabase } from '@/app/lib/supabase';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Simple in-memory cache with a 5-minute expiration
+const responseCache = new Map<string, {data: any, timestamp: number}>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-// Cache for OpenAI responses
-const cache = new Map<string, any>();
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hour cache
+// Generate a cache key from text
+function generateCacheKey(text: string): string {
+  if (!text) return '';
+  return `text-${text.slice(0, 50)}-${text.length}`;
+}
 
 export async function POST(request: Request) {
   try {
-    const { snippets } = await request.json();
+    const { text, texts, source, metadata } = await request.json();
     
-    // Generate cache key from snippet text
-    const cacheKey = snippets.slice(0, 100); // Use first 100 chars as a simple cache key
+    // Handle both single text and array of texts
+    const textItems = texts || (text ? [{ text, source, metadata }] : []);
     
-    // Check cache first
-    if (cache.has(cacheKey)) {
-      console.log('Using cached location extraction results');
-      const { timestamp, result } = cache.get(cacheKey);
-      
-      // Cache still valid?
-      if (Date.now() - timestamp < CACHE_TTL) {
-        return NextResponse.json(result);
-      }
-      
-      // Cache expired
-      cache.delete(cacheKey);
+    if (!textItems || textItems.length === 0) {
+      return NextResponse.json(
+        { error: 'No text provided for location extraction' },
+        { status: 400 }
+      );
     }
-    
-    console.log('Extracting locations from snippets using OpenAI');
-    
-    // Call OpenAI to extract location names
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `You are an expert at extracting location names from text. 
-For each snippet indexed with [X], identify restaurant and business names or specific attractions that would be useful to show on a map. 
-Do not include general areas like neighborhoods, cities, or street names unless they are the main subject.
-For each location, include the snippet index it was found in, and a confidence score (0-1).
-Return ONLY valid JSON with this format:
-{
-  "locations": [
-    {"name": "Specific Location Name", "snippetIndex": 0, "confidence": 0.9},
-    ...
-  ]
-}`
-        },
-        {
-          role: "user",
-          content: snippets
-        }
-      ],
-      temperature: 0.1,
-      response_format: { type: "json_object" }
-    });
-    
-    // Parse and return the result
-    const output = JSON.parse(response.choices[0].message.content || '{"locations":[]}');
-    
-    // Store in cache
-    cache.set(cacheKey, {
-      timestamp: Date.now(),
-      result: output
-    });
-    
-    // Return debug info along with the locations for troubleshooting
-    const result = {
-      ...output,
-      debug: {
-        inputLength: snippets.length,
-        snippetCount: (snippets.match(/\[\d+\]/g) || []).length,
-        extractedCount: output.locations?.length || 0,
-        processingTime: response.usage?.total_tokens || 0,
-        sampleSnippets: snippets.slice(0, 200) + (snippets.length > 200 ? '...' : ''),
+
+    // Process all text items
+    const extractionPromises = textItems.map(async (item: any) => {
+      const { text, source = 'api', metadata = {} } = item;
+      
+      // Skip empty items
+      if (!text) return null;
+      
+      // Generate a cache key for this text
+      const cacheKey = generateCacheKey(text);
+      
+      // Check if we have a cached response
+      const cachedResponse = responseCache.get(cacheKey);
+      if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_TTL) {
+        console.log(`Using cached locations for text: ${text.slice(0, 30)}...`);
+        return cachedResponse.data;
       }
-    };
+      
+      // Call the Supabase Edge Function
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const functionUrl = `${supabaseUrl}/functions/v1/extract-locations`;
+      
+      console.log(`Calling extract-locations function for text: ${text.slice(0, 30)}...`);
+      
+      const response = await fetch(
+        functionUrl,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ 
+            text,
+            source,
+            metadata
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Edge function error (${response.status}):`, errorText);
+        throw new Error(`Edge function error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Cache the response
+      responseCache.set(cacheKey, {
+        data,
+        timestamp: Date.now()
+      });
+      
+      return data;
+    });
     
-    return NextResponse.json(result);
+    // Wait for all extractions to complete
+    const results = await Promise.all(extractionPromises);
+    
+    // Combine all locations
+    const allLocations = results
+      .filter(Boolean) // Remove null results
+      .flatMap(result => result.locations || []);
+    
+    console.log(`Extracted ${allLocations.length} total locations from ${textItems.length} text items`);
+    
+    return NextResponse.json({ locations: allLocations });
   } catch (error) {
-    console.error('Error extracting locations:', error);
+    console.error('Location extraction error:', error);
+    
     return NextResponse.json(
-      { error: 'Failed to extract locations', details: (error as Error).message },
+      { error: 'Failed to extract locations' },
+      { status: 500 }
+    );
+  }
+}
+
+// Also handle GET requests for easier testing
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const textParam = searchParams.get('text');
+  
+  if (!textParam) {
+    return NextResponse.json(
+      { error: 'Missing text parameter' },
+      { status: 400 }
+    );
+  }
+  
+  try {
+    // Call the POST handler with our test data
+    const mockRequest = new Request('http://localhost', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text: textParam })
+    });
+    
+    return await POST(mockRequest);
+  } catch (error) {
+    console.error('GET handler error:', error);
+    
+    return NextResponse.json(
+      { error: 'Failed to process test request' },
       { status: 500 }
     );
   }
